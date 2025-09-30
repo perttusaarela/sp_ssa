@@ -141,8 +141,12 @@ def segs_by_block(segs, block_idx=0):
     return result
 
 
+
+
 # Non-stationarity in mean
-def spatial_setting_1(num_points, side_length=1):
+def spatial_setting_1(num_points, side_length=1, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
     coordinates = generate_coordinates(num_points, side_length)  # uniform coordinates on [0, side_length]^2
     partition = partition_coordinates(coordinates, 3, 3, side_length)
     # coordinates = sort_by_partition(coordinates, partition)
@@ -158,11 +162,11 @@ def spatial_setting_1(num_points, side_length=1):
     non_stationary_mean2 = params_to_block_vector([0.75, -0.75, 1.25, -1.25], seg_size, 1)
     non_stationary_mean3 = params_to_block_vector([-1.5, -2.0, 2.0, 1.5], seg_size, 2)
 
-    partition = clustering_partition(coordinates, 3, side_length)
+    #partition = clustering_partition(coordinates, 3, side_length)
     #segs, seg_size = get_segments(partition)
-    non_stationary_mean1 = cluster_param_vectors(num_points, partition, [-1.5, -2.0, 3.5])
-    non_stationary_mean2 = cluster_param_vectors(num_points, partition, [-1.25, 0.75, 0.5])
-    non_stationary_mean3 = cluster_param_vectors(num_points, partition, [-1, -0.5, 1.5])
+    #non_stationary_mean1 = cluster_param_vectors(num_points, partition, [-1.5, -2.0, 3.5])
+    #non_stationary_mean2 = cluster_param_vectors(num_points, partition, [-1.25, 0.75, 0.5])
+    #non_stationary_mean3 = cluster_param_vectors(num_points, partition, [-1, -0.5, 1.5])
 
     signals[5] += non_stationary_mean1
     signals[6] += non_stationary_mean2
@@ -172,16 +176,19 @@ def spatial_setting_1(num_points, side_length=1):
 
 
 # non-stationarity in variance
-def spatial_setting_2(num_points, side_length=1):
+def spatial_setting_2(num_points, side_length=1, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
     coordinates = generate_coordinates(num_points, side_length)
     partition = partition_coordinates(coordinates, 3, 3, side_length)
     coordinates = sort_by_partition(coordinates, partition)
     segs, seg_size = get_segments(partition)
     cov_mat = matern_covariance(coordinates)
     cholesky = np.linalg.cholesky(cov_mat)
-    signals = [
-        spatial_data_from_cholesky(cholesky) for _ in range(5)
-    ]
+    signals = []
+    for _ in range(5):
+        spatial_data = spatial_data_from_cholesky(cholesky)
+        signals.append(spatial_data)
 
     variance1 = params_to_block_vector([0.25, 0.5, 0.75, 1.0], seg_size, 0)
     variance2 = params_to_block_vector([0.75, 0.55, 1.25, 1.5], seg_size, 1)
@@ -189,22 +196,22 @@ def spatial_setting_2(num_points, side_length=1):
     vars = [variance1, variance2, variance3]
 
     for var in vars:
-        cov_plus_var = cov_mat + np.diag(var)
-        spatial_data = generate_spatial_data(cov_plus_var)
+        spatial_data = generate_spatial_data(cov_mat + np.diag(var))
         signals.append(spatial_data)
 
     return np.vstack(signals), coordinates
 
 
 # Non-stationarity in autocovariance
-def spatial_setting_3(num_points, side_length=1):
+def spatial_setting_3(num_points, side_length=1, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
     coordinates = generate_coordinates(num_points, side_length)
     # partition = partition_coordinates(coordinates, 3, 3, side_length)
     partition = clustering_partition(coordinates, 3, side_length)
     # coordinates = sort_by_partition(coordinates, partition)
     segs, seg_size = get_segments(partition)
     cov_mat = ssa_matern_covariance(coordinates, nu=0.5, phi=0.5)
-
     cholesky = np.linalg.cholesky(cov_mat)
     signals = []
     for _ in range(5):
@@ -238,7 +245,9 @@ def cluster_param_vectors(vec_len, parts, params):
 
 
 
-def spatial_setting_4(num_points, side_length=1, clusters=False):
+def spatial_setting_4(num_points, side_length=1, seed=None, clusters=True):
+    if seed is not None:
+        np.random.seed(seed)
     coordinates = generate_coordinates(num_points, side_length)
     cov_mat = matern_covariance(coordinates)
     cholesky = np.linalg.cholesky(cov_mat)
@@ -281,6 +290,7 @@ def spatial_setting_4(num_points, side_length=1, clusters=False):
     return signals, coordinates
 
 
+
 def clustering_partition(coordinates, num_clusters, side_length):
     cluster_centers = generate_coordinates(num_clusters, side_length)
 
@@ -304,7 +314,6 @@ def clustering_partition(coordinates, num_clusters, side_length):
 if __name__ == '__main__':
     num_points = 2000
     sl = int(np.sqrt(num_points))
-    points = generate_coordinates(num_points, sl)
     np.random.seed(0)
     start = timer()
     part1 = spatial_setting_2(num_points, sl)
