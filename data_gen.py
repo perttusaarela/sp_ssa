@@ -5,6 +5,8 @@ import sys
 import numpy as np
 from timeit import default_timer as timer
 from spatial import spatial_setting_1, spatial_setting_2, spatial_setting_3, spatial_setting_4
+from dask import delayed, compute
+from multiprocessing import Pool
 
 NUM_SIMULATIONS = 200
 
@@ -88,8 +90,8 @@ if __name__ == '__main__':
     filename = sys.argv[1]
     idx = int(sys.argv[2])
     np.random.seed(np.random.randint(1000000000))
-    import multiprocessing
 
+    import multiprocessing
     multiprocessing.freeze_support()
 
     print(len(sys.argv))

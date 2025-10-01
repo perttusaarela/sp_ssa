@@ -101,20 +101,20 @@ if __name__ == '__main__':
                         method_lines.append(line)
                         method_labels.append(method)
 
-                    ax.set_ylim(0, 3)
+                    ax.set_ylim(-0.2, 3)
 
                     if row_idx == 0:
                         ax.set_title(f"{splits[col_idx]}")
                     if row_idx == 1 and col_idx == 0:
-                        ax.set_xlabel("Number of points")
                         ax.set_ylabel("Non-stationary")
                     if col_idx == 0 and row_idx == 0:
                         ax.set_ylabel("Stationary")
+                    if row_idx == 1 and col_idx == 1:
+                        ax.set_xlabel("Number of points")
 
 
         # Add a single legend to the entire figure
-        fig.legend(method_lines, method_labels, loc='upper center', ncol=len(methods), bbox_to_anchor=(0.5, 0.92))
-        fig.suptitle(f"Results for Setting {file[-9]}")
+        fig.legend(method_lines, method_labels, loc='lower center', ncol=len(methods), bbox_to_anchor=(0.5, -0.02))
         plt.tight_layout(rect=[0, 0, 1, 0.95])  # Make room for the legend and title
         plt.savefig(f"plots/setting_{file[-9]}", dpi=300)
         plt.show()
