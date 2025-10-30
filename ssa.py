@@ -4,8 +4,36 @@ from utils import sample_mean, sample_covariance, local_sample_covariance, ball_
     ring_kernel_local_sample_covariance, gaussian_kernel_local_sample_covariance
 from functools import partial
 
+
+def to_projector(mat):
+    AtA = (mat.transpose() @ mat)
+    if np.linalg.matrix_rank(AtA) != mat.shape[0]:
+        inv = np.linalg.pinv(AtA)
+    else:
+        inv = np.linalg.inv(AtA)
+    return mat @ inv @ mat.transpose()
+
+
+def compare_projectors(real_proj, estimated_proj):
+    return 0.5 * np.linalg.norm(real_proj - estimated_proj, ord='fro')**2
+
+
+def compare_as_projectors(mat1, mat2):
+    assert mat1.shape == mat2.shape
+    p1 = to_projector(mat1)
+    p2 = to_projector(mat2)
+    sub = p1 - p2
+    return 0.5 * np.linalg.norm(sub, ord='fro')**2
+
+
+# This class will be the top level object for all SSA procedures
+class SSA:
+    def __init__(self):
+        pass
+
+
 #  This class is used to store results from SSA algorithms
-class SSAObject:
+class SSAResultsObject:
     def __init__(self, m_mat=None, diagonalizer = None, diagonal = None):
         self.m_mat = m_mat  # scatter matrix
         self.diagonalizer = diagonalizer  # matrix of (pseudo-)eigenvectors
@@ -56,9 +84,10 @@ def ssa_sir(observations, segments, seg_sizes):
 
     eigvals, eigvecs = np.linalg.eig(m_mat)  # get eigen-stuff
     perm = np.argsort(eigvals)[::-1]
+
     eigvecs = eigvecs[:, perm]  # sort by eigenvalues, descending order
     eigvals = eigvals[perm]
-    result = SSAObject(m_mat=m_mat[np.ix_(perm, perm)], diagonalizer=eigvecs, diagonal=eigvals)
+    result = SSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
     return result
 
 
@@ -76,7 +105,7 @@ def ssa_save(observations, segments, seg_sizes):
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
-    result = SSAObject(m_mat=m_mat[np.ix_(perm, perm)], diagonalizer=eigvecs, diagonal=eigvals)
+    result = SSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
     return result
 
 
@@ -97,7 +126,7 @@ def ssa_cor(observations, segments, seg_sizes, lag=1):
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
 
-    result = SSAObject(m_mat=m_mat[np.ix_(perm, perm)], diagonalizer=eigvecs, diagonal=eigvals)
+    result = SSAResultsObject(m_mat=m_mat[np.ix_(perm, perm)], diagonalizer=eigvecs, diagonal=eigvals)
     return result
 
 
@@ -128,10 +157,11 @@ def ssa_lcor(observations, coords, segments, seg_sizes, kernel):
 
 
     eigvals, eigvecs = np.linalg.eig(m_mat)
+
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
-    result = SSAObject(m_mat=m_mat[np.ix_(perm, perm)], diagonalizer=eigvecs, diagonal=eigvals)
+    result = SSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
     return result
 
 
@@ -150,7 +180,7 @@ def multi_ssa_lcor(observations, coords, segments, seg_sizes, kernels):
     perm = np.argsort(diagonal_of_sum_matrix)[::-1]
     V = V[:, perm]  # V <- V P^T <=> M = V D V^T = V P^T P D P^T P V
 
-    result = SSAObject(m_mat=sum(D)[np.ix_(perm, perm)], diagonalizer=V, diagonal=diagonal_of_sum_matrix[perm])
+    result = SSAResultsObject(m_mat=sum(D)[np.ix_(perm, perm)], diagonalizer=V, diagonal=diagonal_of_sum_matrix[perm])
 
     return result
 
@@ -176,11 +206,30 @@ def ssa_comb(observations, segments, seg_sizes, lag: int | list[int] =1):
     perm = np.argsort(diagonal_of_sum_matrix)[::-1]
     V = V[:, perm]  # V <- V P^T <=> M = V D V^T = V P^T P D P^T P V
 
-    result = SSAObject(m_mat=sum(D)[np.ix_(perm, perm)],diagonalizer=V, diagonal=diagonal_of_sum_matrix)
+    result = SSAResultsObject(m_mat=sum(D)[np.ix_(perm, perm)], diagonalizer=V, diagonal=diagonal_of_sum_matrix)
     return result
 
 
-def sp_ssa_comb(observations, coords, segments, seg_sizes, kernel):
+def fix_column_signs(B):
+    """
+    Ensures each column of matrix B has the entry with largest absolute value positive.
+
+    Parameters:
+        B (np.ndarray): A 2D NumPy array (e.g., from eigenvector output)
+
+    Returns:
+        B_fixed (np.ndarray): Matrix with sign-corrected columns
+    """
+    B_fixed = B.copy()
+    for j in range(B.shape[1]):
+        col = B_fixed[:, j]
+        max_idx = np.argmax(np.abs(col))
+        if col[max_idx] < 0:
+            B_fixed[:, j] *= -1  # Flip sign of entire column
+    return B_fixed
+
+
+def sp_ssa_comb(observations, coords, segments, seg_sizes, kernel, scale=True):
     M1 = ssa_sir(observations, segments, seg_sizes)
     M2 = ssa_save(observations, segments, seg_sizes)
     objs = [M1, M2]
@@ -193,19 +242,62 @@ def sp_ssa_comb(observations, coords, segments, seg_sizes, kernel):
         objs.append(ssa_lcor(observations, coords, segments, seg_sizes, kernel=kernel))
         matrices.append(objs[-1].m_mat)
 
+    if scale:
+        for i in range(len(matrices)):
+            matrices[i] = matrices[i] / np.max(matrices[i])
+
 
     # Prep matrices from joint diagonalization
     X = np.concatenate(matrices, axis=0)
     # Jointly diagonalize, V is the diagonalizer, and D is a list of diagonal matrices
-    V, D, it = joint_diagonalization(X)
-    abs_D = np.abs(D)
-    # Permute V such that its eigenvalues are in decreasing order
-    diagonal_of_sum_matrix = np.diagonal(sum(abs_D))
-    perm = np.argsort(diagonal_of_sum_matrix)[::-1]
-    V = V[:, perm]  # V <- V P^T <=> M = V D V^T = V P^T P D P^T P V
 
-    result = SSAObject(m_mat=sum(D)[np.ix_(perm, perm)],diagonalizer=V, diagonal=diagonal_of_sum_matrix[perm])
+    result = SSAResultsObject(m_mat=None, diagonalizer=None, diagonal=None)
     result.aux["spsir"] = objs[0]
     result.aux["spsave"] = objs[1]
     result.aux["splcor"] = objs[2]
+
+    V, D, it = joint_diagonalization(X)
+    abs_D = np.abs(D)
+    diagonal_of_sum_matrix = np.diagonal(sum(abs_D))
+    perm = np.argsort(diagonal_of_sum_matrix)[::-1]
+    V = V[:, perm]  # V <- V P^T <=> M = V D V^T = V P^T P D P^T P V
+    result.diagonalizer = V
+    result.diagonal = diagonal_of_sum_matrix[perm]
+    result.m_mat = V
+    return result
+
+
+
+def sp_ssa_sum(observations, coords, segments, seg_sizes, kernel, scale=True):
+    M1 = ssa_sir(observations, segments, seg_sizes)
+    M2 = ssa_save(observations, segments, seg_sizes)
+    objs = [M2, M1]
+    matrices = [M2.m_mat, M1.m_mat]
+    if isinstance(kernel, list):
+        for f in kernel:
+            objs.append(ssa_lcor(observations, coords, segments, seg_sizes, kernel=f))
+            matrices.append(objs[-1].m_mat)
+    else:
+        objs.append(ssa_lcor(observations, coords, segments, seg_sizes, kernel=kernel))
+        matrices.append(objs[-1].m_mat)
+
+    if scale:
+        for i in range(len(matrices)):
+            matrices[i] = matrices[i] / np.max(matrices[i])
+
+    # Prep matrices from joint diagonalization
+    X = sum(matrices)
+    eigvals, eigvecs = np.linalg.eig(X)
+    perm = np.argsort(eigvals)[::-1]
+    eigvecs = eigvecs[:, perm]
+    eigvals = eigvals[perm]
+
+    result = SSAResultsObject(m_mat=X[np.ix_(perm, perm)], diagonalizer=eigvecs, diagonal=eigvals)
+    result.aux["spsir"] = objs[0]
+    result.aux["spsave"] = objs[1]
+    result.aux["splcor"] = objs[2]
+    return result
+
+    result = SSAResultsObject(m_mat=sum(D)[np.ix_(perm, perm)], diagonalizer=V, diagonal=diagonal_of_sum_matrix[perm])
+
     return result

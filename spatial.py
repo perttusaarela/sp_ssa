@@ -8,6 +8,9 @@ from functools import partial
 from timeit import default_timer as timer
 
 
+NUM_STATIONARY = 3
+
+
 def generate_coordinates(num_data_points, hi=1):
     """
     Generates uniformly random 2-D coordinates
@@ -223,17 +226,18 @@ def spatial_setting_1(num_points, side_length=1, seed=None):
     cov_mat = matern_covariance(coordinates)
     signals = []
     cholesky = np.linalg.cholesky(cov_mat)
-    for _ in range(8):
+    for _ in range(NUM_STATIONARY + 3):
         spatial_data = spatial_data_from_cholesky(cholesky)
+        spatial_data = (spatial_data - np.mean(spatial_data)) / np.std(spatial_data)
         signals.append(spatial_data)
 
     non_stationary_mean1 = params_to_block_vector([1.25, -1.25, 1.5, -1.5], seg_size, 0)
     non_stationary_mean2 = params_to_block_vector([0.75*2, -0.75*2, 1.25*2, -1.25*2], seg_size, 1)
     non_stationary_mean3 = params_to_block_vector([-1.5*2, -2.0*2, 2.0*2, 1.5*2], seg_size, 2)
 
-    signals[5] += non_stationary_mean1
-    signals[6] += non_stationary_mean2
-    signals[7] += non_stationary_mean3
+    signals[NUM_STATIONARY]     += non_stationary_mean1
+    signals[NUM_STATIONARY + 1] += non_stationary_mean2
+    signals[NUM_STATIONARY + 2] += non_stationary_mean3
 
     return np.vstack(signals), coordinates
 
@@ -249,17 +253,20 @@ def spatial_setting_2(num_points, side_length=1, seed=None):
     cov_mat = matern_covariance(coordinates)
     cholesky = np.linalg.cholesky(cov_mat)
     signals = []
-    for _ in range(5):
+    for _ in range(NUM_STATIONARY):
         spatial_data = spatial_data_from_cholesky(cholesky)
+        spatial_data = (spatial_data - np.mean(spatial_data)) / np.std(spatial_data)
         signals.append(spatial_data)
 
-    variance1 = params_to_block_vector([0.25, 0.5, 0.75, 1.0], seg_size, 0)
-    variance2 = params_to_block_vector([0.75, 0.55, 1.25, 1.5], seg_size, 1)
-    variance3 = params_to_block_vector([0.5, 1.0, 2.0, 1.5], seg_size, 2)
+    variance1 = params_to_block_vector([1.25, 1.5, 1.75, 2.0], seg_size, 0)
+    variance2 = params_to_block_vector([1.75, 1.55, 2.25, 2.5], seg_size, 1)
+    variance3 = params_to_block_vector([1.5, 2.0, 3.0, 2.5], seg_size, 2)
     vars = [variance1, variance2, variance3]
 
     for var in vars:
-        spatial_data = generate_spatial_data(cov_mat + np.diag(var))
+        std_matrix = np.diag(np.sqrt(var))
+        spatial_data = generate_spatial_data(std_matrix @ cov_mat @ std_matrix)
+        spatial_data = spatial_data - np.mean(spatial_data)
         signals.append(spatial_data)
 
     return np.vstack(signals), coordinates
@@ -275,8 +282,9 @@ def spatial_setting_3(num_points, side_length=1, seed=None):
     cov_mat = ssa_matern_covariance(coordinates, nu=0.5, phi=0.5)
     cholesky = np.linalg.cholesky(cov_mat)
     signals = []
-    for _ in range(5):
+    for _ in range(NUM_STATIONARY):
         spatial_data = spatial_data_from_cholesky(cholesky)
+        spatial_data = (spatial_data - np.mean(spatial_data)) / np.std(spatial_data)
         signals.append(spatial_data)
 
 
@@ -287,14 +295,62 @@ def spatial_setting_3(num_points, side_length=1, seed=None):
                    [(0.5, 0.5), (1.0, 1.0), (1.0, 2.0)]]
     for params in params_list:
         ns_signal = np.zeros(num_points)
+        #print("parts:")
         for idx, seg in enumerate(segs):
             cm = ssa_matern_covariance(coordinates[seg], nu=params[idx][0], phi=params[idx][1])
             data = generate_spatial_data(cm)
+            data = data - np.mean(data)
+            data = data / np.std(data)
             ns_signal[seg] = data
+
 
         signals.append(ns_signal)
 
-    return np.vstack(signals), coordinates
+    return_signals = np.vstack(signals)
+
+
+    return return_signals, coordinates
+
+
+# Non-stationarity in autocovariance
+def non_cluster_spatial_setting_3(num_points, side_length=1, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
+    coordinates = generate_coordinates(num_points, side_length)
+    partition = partition_coordinates(coordinates, 3, 3, side_length)
+    coordinates = sort_by_partition(coordinates, partition)
+    segs, seg_size = get_segments(partition)
+    cov_mat = matern_covariance(coordinates)
+    cholesky = np.linalg.cholesky(cov_mat)
+    signals = []
+    for _ in range(NUM_STATIONARY):
+        spatial_data = spatial_data_from_cholesky(cholesky)
+        spatial_data = (spatial_data - np.mean(spatial_data)) / np.std(spatial_data)
+        signals.append(spatial_data)
+
+    segs = [list(seg) for seg in segs]
+
+    params_list = [[(1.2, 1.4), (0.5, 3.0), (0.7, 0.7), (3.0, 3.0)],
+                   [(0.5, 0.5), (1.0, 1.0), (1.0, 2.0), (2.0, 4.0)],
+                   [(1.5, 2.7), (0.7, 1.0), (1.2, 1.9), (1.3, 0.2)]]
+    for part_idx, params in enumerate(params_list):
+        ns_signal = np.zeros(num_points)
+        for block in NONSTATIONARY_BLOCKS[part_idx]:
+            indices = []
+            for block_idx in block:
+                indices.extend(segs[block_idx])
+
+            cm = ssa_matern_covariance(coordinates[indices], nu=params[part_idx][0], phi=params[part_idx][1])
+            data = generate_spatial_data(cm)
+            data = data - np.mean(data)
+            data = data / np.std(data)
+            ns_signal[indices] = data
+
+        signals.append(ns_signal)
+
+    return_signals = np.vstack(signals)
+
+    return return_signals, coordinates
 
 
 def cluster_param_vectors(vec_len, parts, params):
@@ -315,28 +371,77 @@ def spatial_setting_4(num_points, side_length=1, seed=None, clusters=True):
     cov_mat = matern_covariance(coordinates)
     cholesky = np.linalg.cholesky(cov_mat)
     signals = []
-    for _ in range(6):
+    for _ in range(NUM_STATIONARY + 1):
         spatial_data = spatial_data_from_cholesky(cholesky)
+        spatial_data = (spatial_data - np.mean(spatial_data)) / np.std(spatial_data)
         signals.append(spatial_data)
 
-    non_stationary_mean = params_to_block_vector([-1.5 * 2, -2.0 * 2, 2.0 * 2, 1.5 * 2], seg_size, 2)
-    variance = params_to_block_vector([0.5, 1.0, 2.0, 1.5], seg_size, 0)
+    non_stationary_mean = params_to_block_vector([-1.5 * 2, -2.0 * 2, 2.0 * 2, 1.5 * 2], seg_size, 0)
+    variance = params_to_block_vector([1.5, 2.0, 3.0, 2.5], seg_size, 1)
 
-    signals[5] += non_stationary_mean
-    signals.append(generate_spatial_data(cov_mat + np.diag(variance)))
+    signals[NUM_STATIONARY] += non_stationary_mean
+    std_matrix = np.diag(np.sqrt(variance))
+    variance_data = generate_spatial_data(std_matrix @ cov_mat @ std_matrix)
+    #signals.append(variance_data - np.mean(variance_data))
 
     partition = clustering_partition(coordinates, 3, side_length)
     segs, seg_size = get_segments(partition)
     segs = [list(seg) for seg in segs]
 
     ns_signal = np.zeros(num_points)
-    params = [(0.5, 0.5), (1.0, 1.0), (1.0, 2.0)]
+    params = [(1.5, 2.7), (0.7, 1.0), (1.2, 1.9)]
     for idx, seg in enumerate(segs):
         cm = ssa_matern_covariance(coordinates[seg], nu=params[idx][0], phi=params[idx][1])
         data = generate_spatial_data(cm)
-        ns_signal[seg] = data
+        ns_signal[seg] = (data - np.mean(data)) / np.std(data)
 
     signals.append(ns_signal)
+
+    signals = np.vstack(signals)
+
+    return signals, coordinates
+
+
+def non_cluster_spatial_setting_4(num_points, side_length=1, seed=None, clusters=True):
+    if seed is not None:
+        np.random.seed(seed)
+    coordinates = generate_coordinates(num_points, side_length)
+    partition = partition_coordinates(coordinates, 3, 3, side_length)
+    segs, seg_size = get_segments(partition)
+    coordinates = sort_by_partition(coordinates, partition)
+    cov_mat = matern_covariance(coordinates)
+    cholesky = np.linalg.cholesky(cov_mat)
+    signals = []
+    for _ in range(NUM_STATIONARY + 1):
+        spatial_data = spatial_data_from_cholesky(cholesky)
+        spatial_data = (spatial_data - np.mean(spatial_data)) / np.std(spatial_data)
+        signals.append(spatial_data)
+
+    non_stationary_mean = params_to_block_vector([-1.5 * 2, -2.0 * 2, 2.0 * 2, 1.5 * 2], seg_size, 0)
+    variance = params_to_block_vector([0.5, 1.0, 2.0, 1.5], seg_size, 1)
+
+    signals[NUM_STATIONARY] += non_stationary_mean
+    variance_data = generate_spatial_data(cov_mat + np.diag(variance))
+    signals.append(variance_data - np.mean(variance_data))
+
+
+    segs = [list(seg) for seg in segs]
+
+    params_list = [[(1.2, 1.4), (0.5, 3.0), (0.7, 0.7), (3.0, 3.0)]]
+    for part_idx, params in enumerate(params_list):
+        ns_signal = np.zeros(num_points)
+        for block in NONSTATIONARY_BLOCKS[part_idx]:
+            indices = []
+            for block_idx in block:
+                indices.extend(segs[block_idx])
+
+            cm = ssa_matern_covariance(coordinates[indices], nu=params[part_idx][0], phi=params[part_idx][1])
+            data = generate_spatial_data(cm)
+            data = data - np.mean(data)
+            data = data / np.std(data)
+            ns_signal[indices] = data
+
+        signals.append(ns_signal)
 
     signals = np.vstack(signals)
 
@@ -365,10 +470,10 @@ def clustering_partition(coordinates, num_clusters, side_length):
 
 
 if __name__ == '__main__':
-    num_points = 2000
+    num_points = 400
     sl = int(np.sqrt(num_points))
-    np.random.seed(0)
+    #np.random.seed(0)
     start = timer()
-    part1 = spatial_setting_2(num_points, sl)
+    part1 = spatial_setting_3(num_points, sl)
     end = timer()
     print(end - start)

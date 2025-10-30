@@ -8,7 +8,18 @@ def generate_random_orthogonal_matrix(n):
 
 
 def matrix_square_root(matrix):
-    return sqrtm(matrix)
+    #sq = sqrtm(matrix)
+    eig_vals, eig_vecs = np.linalg.eig(matrix)
+    ret = eig_vecs.T @ np.diag(np.sqrt(eig_vals)) @ eig_vecs
+    return ret
+
+
+def generate_random_invertible_matrix(p):
+    candidate = np.random.rand(p, p)
+    while np.linalg.matrix_rank(candidate) != p:
+        candidate = np.random.rand(p, p)
+
+    return candidate
 
 
 def sample_mean(data, segment=None):
@@ -135,7 +146,7 @@ def ball_kernel_local_sample_covariance(data, coords, radius, segment=None, seg_
     np.fill_diagonal(mask, 0.0)                         # exclude self-pairs
 
     # Step 3: Compute weighted covariance using matrix multiplication
-    l_cov = (X_centered @ mask @ X_centered.T) / N
+    l_cov = (X_centered @ mask @ X_centered.T) / (N**2)
 
     return l_cov
 

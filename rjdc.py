@@ -19,7 +19,7 @@ def do_python_rjdc(X, kpmaxit, w, eps, results):
     return results_out[:]
 
 
-def joint_diagonalization(X, weight=None, maxiter=100, eps=1e-6):
+def joint_diagonalization(X, weight=None, maxiter=1000, eps=1e-6):
 
     kp, p = X.shape
     k = kp // p
@@ -37,6 +37,6 @@ def joint_diagonalization(X, weight=None, maxiter=100, eps=1e-6):
     D = []
     for i in range(k):
         matrix = X[i * p:(i + 1) * p, :]
-        D.append(V.transpose() @ (matrix.transpose() @ V))
+        D.append(V.T @ (matrix.T @ V))
 
     return V, D, iter

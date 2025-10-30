@@ -45,7 +45,7 @@ def process_observation(observation):
     side_length = int(np.sqrt(coordinates.shape[0]))
 
     num_non_stationary = 3
-    num_stationary = 5
+    num_stationary = 3
     p = num_stationary + num_non_stationary
 
     mixing_matrix = generate_random_orthogonal_matrix(p)  # we try to estimate this
@@ -62,8 +62,8 @@ def process_observation(observation):
     # standardized data, i.e., Cov^{-1/2}(data - \mu)
     whitened_signals = numpy_standardize_data(mixed_signals)
 
-    ss_base = r_mat[:, :5].transpose() @ whitened_signals[1]  # random separator for ss
-    ns_base = r_mat[:, 5:].transpose() @ whitened_signals[1]
+    ss_base = r_mat[:, :num_stationary].transpose() @ whitened_signals[1]  # random separator for ss
+    ns_base = r_mat[:, num_stationary:].transpose() @ whitened_signals[1]
 
     random_res = np.array(
         (
@@ -107,7 +107,7 @@ def process_observation(observation):
 
     return results
 
-MAX_COUNT = 2000
+MAX_COUNT = 20
 
 def pool_process_data(filename):
     splits = [(2, 2), (3, 3), (4, 4)]
@@ -155,12 +155,13 @@ def pool_process_data(filename):
 
 if __name__ == '__main__':
     idx_str = sys.argv[1]
+    #idx_str = "1"
     from multiprocessing import Pool
     cwd = os.getcwd()
-    filepath = cwd + "/full_data/sim" + idx_str + ".pkl"
+    filepath = cwd + "/data/full_data/sim" + idx_str + "_short_alt.pkl"
     start = timer()
     results = pool_process_data(filepath)
     end = timer()
     print(end - start)
-    with open(cwd + "/full_data/sim" + idx_str + "_res.pkl", 'wb') as f:
+    with open(cwd + "/data/full_data/sim" + idx_str + "_short_res.pkl", 'wb') as f:
         pickle.dump(results, f)
