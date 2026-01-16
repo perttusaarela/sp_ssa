@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.linalg import sqrtm
 from scipy.stats import ortho_group
 
 
@@ -9,8 +8,8 @@ def generate_random_orthogonal_matrix(n):
 
 def matrix_square_root(matrix):
     #sq = sqrtm(matrix)
-    eig_vals, eig_vecs = np.linalg.eig(matrix)
-    ret = eig_vecs.T @ np.diag(np.sqrt(eig_vals)) @ eig_vecs
+    eig_vals, eig_vecs = np.linalg.eigh(matrix)
+    ret = eig_vecs.T @ np.diag(1 / np.sqrt(eig_vals)) @ eig_vecs
     return ret
 
 
@@ -58,19 +57,19 @@ def standardize_data(data, mean=None, cov=None):
         data[:, i] -= mean
 
     sqrt_cov = matrix_square_root(cov)
+
     return sqrt_cov @ data, sqrt_cov
 
 
 def numpy_standardize_data(data):
-    mean = np.mean(data, axis=1)
-    cov = np.cov(data, bias=True)
-    assert all(np.linalg.eigvals(cov) >= 0)
-    for i in range(data.shape[1]):
-        data[:, i] -= mean
+    data -= data.mean(axis=1, keepdims=True)
+    cov = np.cov(data, bias=True, rowvar=True)
+    eigvals, eigvecs = np.linalg.eig(cov)
 
-    sqrt_cov = matrix_square_root(cov)
+    # Compute A^{-1/2}
+    sqrt_cov = eigvecs @ np.diag(1 / np.sqrt(eigvals)) @ eigvecs.T
+
     return sqrt_cov @ data, sqrt_cov
-
 
 
 def ball_kernel(vec, radius):
@@ -88,34 +87,49 @@ def gauss_kernel(vec, radius):
     return np.exp(-0.5 * (gauss_const * np.linalg.norm(vec) / radius)**2)
 
 
-def local_sample_covariance(data, func, coords, segment=None, seg_mean=None):
+def scaled_local_sample_covariance(data, radius, coords, segment=None, seg_mean=None):
     if segment is None:
-        segment = range(data.shape[1])
-    segment = np.array(segment)
+        segment = np.arange(data.shape[1])
+    segment = np.asarray(segment)
 
-    X = data[:, segment]
-    C = coords[segment]
+    X = data[:, segment]  # (D, N)
+    C = coords[segment]  # (N, 2)
+    N = X.shape[1]
+    D = X.shape[0]
 
-    # Compute or reuse mean
+    # Mean
     if seg_mean is None:
-        seg_mean = np.mean(X, axis=1, keepdims=True)
+        seg_mean = X.mean(axis=1, keepdims=True)
 
-    X_centered = X - seg_mean  # Shape: (D, N)
-    N = X_centered.shape[1]
+    Xc = X - seg_mean  # (D, N)
 
-    # Precompute weights matrix W[u, u'] = func(coords[u] - coords[u'])
-    # Use broadcasting to compute all pairwise differences
-    diffs = C[:, np.newaxis, :] - C[np.newaxis, :, :]  # shape (N, N, dim)
-    weights = np.vectorize(func, signature='(d)->()')(diffs)  # shape (N, N)
+    # Pairwise distance mask
+    diff = C[:, None, :] - C[None, :, :]
+    dist2 = np.sum(diff ** 2, axis=2)
+    mask = (dist2 <= radius ** 2)
 
-    # Remove diagonal (u == u') if needed
-    np.fill_diagonal(weights, 0.0)
+    # Only consider j > i
+    mask = np.triu(mask, k=1)
 
-    # Compute covariance: L = (1/N) * sum_{u ≠ u'} w_{u,u'} * (x_u - μ)(x_{u'} - μ)^T
-    # This is: X_centered @ W @ X_centered.T
-    l_cov = (X_centered @ weights @ X_centered.T) / N
+    l_cov = np.zeros((D, D))
 
-    return l_cov
+    for i in range(N):
+        js = np.where(mask[i])[0]
+        counter = js.size
+        if counter == 0:
+            continue
+
+        Xi = Xc[:, i:i + 1]  # (D, 1)
+        Xj = Xc[:, js]  # (D, K)
+
+        Sj = np.sum(Xj, axis=1, keepdims=True)  # (D, 1)
+
+        # Sum_j (Xi*Xjᵀ) + Sum_j (Xj*Xiᵀ)
+        tmp = Xi @ Sj.T + Sj @ Xi.T  # (D, D)
+
+        l_cov += tmp / counter  # per-i normalization
+
+    return l_cov / N  # final normalization
 
 
 
@@ -143,13 +157,12 @@ def ball_kernel_local_sample_covariance(data, coords, radius, segment=None, seg_
 
     # Step 2: Create weights matrix using ball kernel
     mask = (sq_dists <= radius ** 2).astype(float)      # binary weights
-    np.fill_diagonal(mask, 0.0)                         # exclude self-pairs
+    np.fill_diagonal(mask, 0.0)                     # exclude self-pairs
 
     # Step 3: Compute weighted covariance using matrix multiplication
-    l_cov = (X_centered @ mask @ X_centered.T) / (N**2)
+    l_cov = (X_centered @ mask @ X_centered.T) / (N)
 
     return l_cov
-
 
 
 def ring_kernel_local_sample_covariance(data, coords, inner_radius, outer_radius, segment=None, seg_mean=None):

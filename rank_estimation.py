@@ -1,12 +1,10 @@
 import pickle
-
 import numpy as np
-from spatial import (partition_coordinates, get_segments, non_cluster_spatial_setting_3, spatial_setting_2,
-                     spatial_setting_3, non_cluster_spatial_setting_4)
+from spatial_settings import (striped_spatial_setting_1, striped_spatial_setting_2, striped_spatial_setting_3,
+                              striped_spatial_setting_4, partition_coordinates, get_segments)
 from ssa import ssa_sir, ssa_save, ssa_lcor, sp_ssa_comb, SSAResultsObject
-from utils import generate_random_orthogonal_matrix
+from utils import generate_random_orthogonal_matrix, numpy_standardize_data
 from functools import partial
-from itertools import product
 from timeit import default_timer as timer
 
 
@@ -44,13 +42,11 @@ def augmentation_estimator(data, procedure, noise_dim, num_trials):
     phi_vec = normalized_scree_plot(procedure(data)[1])
     cum_f_vec = np.cumsum(f_vec)
     g_vec = cum_f_vec + phi_vec
-
-    return g_vec  # , cum_f_vec, phi_vec
+    return g_vec
 
 
 def estimate_rank(data, procedure, noise_dim, num_trials):
     g_vec = augmentation_estimator(data, procedure, noise_dim, num_trials)
-
     return np.argmin(g_vec)
 
 
@@ -58,17 +54,17 @@ def ssa_procedure(data, coords, sl, ssa_method=sp_ssa_comb, split=(3,3), kernel=
     part = partition_coordinates(coords, split[0], split[1], sl)
     segs, seg_size = get_segments(part)
     if kernel is None:
-        ssa_res = ssa_method(observations=data, segments=segs, seg_sizes=seg_size)
+        ssa_res = ssa_method(observations=data, segments=segs)
     else:
-        ssa_res = ssa_method(observations=data, coords=coords, segments=segs, seg_sizes=seg_size, kernel=kernel)
+        ssa_res = ssa_method(observations=data, coords=coords, segments=segs, kernel=kernel)
     ssa_res.sort_by_magnitude()
     return ssa_res.diagonalizer, ssa_res.diagonal
 
 
-def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('b', 2)):
+def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('b', 3.4)):
     part = partition_coordinates(coords, split[0], split[1], sl)
-    segs, seg_size = get_segments(part)
-    res = sp_ssa_comb(data, coords, segs, seg_size, kernel=kernel, scale=False)
+    segs = get_segments(part)
+    res = sp_ssa_comb(data, coords, segs, kernel=kernel)
     res.sort_by_magnitude()
     for method, obj in res.aux.items():
         obj.sort_by_magnitude()
@@ -78,8 +74,8 @@ def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('b', 2)):
 methods = {
         "spsir": (ssa_sir, None),
         "spsave": (ssa_save, None),
-        "splcor": (ssa_lcor, ('b', 2)),
-        "spcomb": (sp_ssa_comb, ('b', 2)),
+        "splcor": (ssa_lcor, ('b', 3.4)),
+        "spcomb": (sp_ssa_comb, ('b', 3.4)),
     }
 
 def multi_augmented_eigenvector_estimator(data, proc, noise_dim, num_trials):
@@ -91,6 +87,7 @@ def multi_augmented_eigenvector_estimator(data, proc, noise_dim, num_trials):
         aug_data = augment_data(data, noise_dim)
         res_obj: SSAResultsObject = proc(aug_data)
         v_aug_j = res_obj.diagonalizer[dim:, :dim]
+        # numpy trickery for computing the norms faster
         norms = np.einsum('ij,ij->j', v_aug_j, v_aug_j)
         results["spcomb"][trial] = norms
         for method, obj in res_obj.aux.items():
@@ -103,188 +100,77 @@ def multi_augmented_eigenvector_estimator(data, proc, noise_dim, num_trials):
     }
     return f_vecs
 
-
-def multi_augmentation_estimator(data, procedure, noise_dim, num_trials):
+def multi_augmentation_estimator(data, procedure, noise_dim, num_trials, debug=False):
+    method = "spsir"
     # Get f_vecs for all methods
     f_vecs = multi_augmented_eigenvector_estimator(data, procedure, noise_dim, num_trials)
 
-    # Compute the procedure for plain data
+    # Compute the procedure for data
     res_obj: SSAResultsObject = procedure(data)
+
     phi_vecs = {"spcomb": normalized_scree_plot(res_obj.diagonal)}
+    if debug:
+        print("diagonal for phi_vec for comb: ", res_obj.diagonal)
     for method, obj in res_obj.aux.items():
+        if debug:
+            print(f"Diagonal for {method}: ", obj.diagonal)
         phi_vecs[method] = normalized_scree_plot(obj.diagonal)
 
     g_vecs = {
         m: np.cumsum(f_vec) + phi_vecs[m] for m, f_vec in f_vecs.items()
     }
 
-    return g_vecs  # , cum_f_vec, phi_vec
+    return g_vecs
 
 
-def multi_estimate_rank(data, procedure, noise_dim, num_trials):
-    g_vecs = multi_augmentation_estimator(data, procedure, noise_dim, num_trials)
+def multi_estimate_rank(data, procedure, noise_dim, num_trials, debug=False):
+    g_vecs = multi_augmentation_estimator(data, procedure, noise_dim, num_trials, debug=debug)
 
     return {m: np.argmin(g_vec) for m, g_vec in g_vecs.items()}
 
 
-
-test_points = [1600]
-splits = [(2, 2), (3, 3), (4, 4)]
-kernel_radius = 2
-num_trials = [10, 20]
-num_noise_signals = [1, 2] #, 3, 4, 5] #  10, 15] # , 20]
-max_count = 10
-
-def process_file(filename):
-    ret = []
-    with open(filename, 'rb') as f:
-        data = pickle.load(f)
-        for num_points in test_points:
-
-            sl = int(np.sqrt(num_points))
-            data_points = data[num_points][:max_count]
-            for obs, coords in data_points:
-                mat = generate_random_orthogonal_matrix(6)
-                mixed_signals = mat @ obs
-
-                for split in splits:
-                    procedure_funcs = {
-                        method: partial(ssa_procedure, coords=coords, sl=sl, ssa_method=ssa_fn, split=split,
-                                        kernel=kernel)
-                        for method, (ssa_fn, kernel) in methods.items()
-                    }
-
-                    # Iterate over all combinations of method, trials, and noise dimensions
-                    for (method, s), d in product(product(methods.keys(), num_trials), num_noise_signals):
-                        func = procedure_funcs[method]
-                        res = estimate_rank(mixed_signals, func, d, s)
-                        ret.append(res)
-                        # Here you should collect or save `res` as needed
-    return ret
+class RankStats:
+    def __init__(self, rank_stat=None):
+        self.counts = {
+            m: np.zeros(10, dtype=int) for m in methods.keys()
+        }
+        if rank_stat is not None:
+            for method, rank in rank_stat.items():
+                self.counts[method][rank] += 1
 
 
-def fast_process_file(filename):
-    ret = []
-    with open(filename, 'rb') as f:
-        data = pickle.load(f)
-        for num_points in test_points:
+    def __add__(self, other):
+        for method in self.counts.keys():
+            self.counts[method] += other.counts[method]
+        return self
 
-            sl = int(np.sqrt(num_points))
-            data_points = data[num_points][:max_count]
-            for obs, coords in data_points:
-                mat = generate_random_orthogonal_matrix(6)
-                mixed_signals = mat @ obs
+    def update(self, rank_stat):
+        for method, rank in rank_stat.items():
+            self.counts[method][rank] += 1
 
-                for split in splits:
-                    func = partial(all_ssa_procedures, coords=coords, sl=sl, split=split, kernel=('b', 2))
-                    for s, d in product(num_trials, num_noise_signals):
-                        res = multi_estimate_rank(mixed_signals, func, s, d)
-                        ret.append({
-                            "num_points": num_points,
-                            "split": split,
-                            "num_trials": s,
-                            "noise_dim": d,
-                            "result": res,
-                        })
-
-    return ret
-
-
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
-def process_one_pair(obs, coords, num_points, sl, splits, methods, num_trials_list, num_noise_signals):
-    results = []
-    mat = generate_random_orthogonal_matrix(6)
-    mixed_signal = mat @ obs
-
-    for split in splits:
-        procedure_funcs = {
-            method: partial(ssa_procedure, coords=coords, sl=sl, ssa_method=ssa_fn, split=split, kernel=kernel)
-            for method, (ssa_fn, kernel) in methods.items()
+    def avg(self):
+        return {
+            m: (np.arange(len(c)) * c).sum() / c.sum() for m, c in self.counts.items()
         }
 
-        for method, func in procedure_funcs.items():
-            for s in num_trials_list:
-                for d in num_noise_signals:
-                    try:
-                        rank, cum_f, phi, g = estimate_rank(mixed_signal, func, d, s)
-                        results.append({
-                            'rank': rank,
-                            'method': method,
-                            'split': split,
-                            'trials': s,
-                            'noise_dim': d
-                        })
-                    except Exception as e:
-                        results.append({
-                            'error': str(e),
-                            'method': method,
-                            'split': split,
-                            'trials': s,
-                            'noise_dim': d
-                        })
+    def most_common(self):
+        return {
+            m: np.argmax(c) for m, c in self.counts.items()
+        }
 
-    return results
+    def dump(self, filename):
+        with open(filename, 'wb') as f:
+            pickle.dump(self.counts, f)
 
+    def __repr__(self):
+        return "RankStats()"
 
+    def __str__(self):
+        ret = f""
+        for methods in self.counts.keys():
+            ret += f"{methods}: {self.counts[methods]}\n"
 
-def process_file_obs_parallel(filename, max_workers=8):
-    with open(filename, 'rb') as f:
-        data = pickle.load(f)
-
-    test_points = [900]
-    splits = [(2, 2)] # , (3, 3), (4, 4)]
-    kernel_radius = 2
-    methods = {
-        "spsir": (ssa_sir, None),
-        "spsave": (ssa_save, None),
-        "splcor": (ssa_lcor, ('b', kernel_radius)),
-        "spcomb": (sp_ssa_comb, ('b', kernel_radius)),
-    }
-
-    num_trials_list = [10]
-    num_noise_signals = [1, 2] # , 10, 15, 20]
-    max_examples = 24
-
-    all_tasks = []
-
-    for num_points in test_points:
-        sl = int(np.sqrt(num_points))
-        data_points = data[num_points][:max_examples]
-
-        for obs, coords in data_points:
-            all_tasks.append((obs, coords, num_points, sl, splits, methods, num_trials_list, num_noise_signals))
-
-    results = []
-    with ProcessPoolExecutor() as executor:
-        futures = [executor.submit(process_one_pair, *task) for task in all_tasks]
-
-        for future in as_completed(futures):
-            results.extend(future.result())
-
-    return results
-
-
-if __name__ == "__main__":
-
-    for _ in range(5):
-        data, coords = non_cluster_spatial_setting_4(1300, 30)
-        func = partial(all_ssa_procedures, coords=coords, sl=30, split=(4,4), kernel=('b', 2))
-        print(multi_estimate_rank(data, func, 3, 10))
-
-    exit()
-    file = "data/full_data/sim2_short.pkl"
-    np.random.seed(1)
-    #start = timer()
-    #process_file(file)
-    #end = timer()
-    #print(end - start)
-    start = timer()
-    res = fast_process_file(file)
-    print(res)
-    end = timer()
-    print(end - start)
-
-
-    exit()
+        ret += f"avg: {self.avg()}\n"
+        ret += f"choice: {self.most_common()}\n"
+        return ret
 
