@@ -61,7 +61,7 @@ def ssa_procedure(data, coords, sl, ssa_method=sp_ssa_comb, split=(3,3), kernel=
     return ssa_res.diagonalizer, ssa_res.diagonal
 
 
-def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('b', 3.4)):
+def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('sb', 3.4)):
     part = partition_coordinates(coords, split[0], split[1], sl)
     segs = get_segments(part)
     res = sp_ssa_comb(data, coords, segs, kernel=kernel)
@@ -74,8 +74,8 @@ def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('b', 3.4)):
 methods = {
         "spsir": (ssa_sir, None),
         "spsave": (ssa_save, None),
-        "splcor": (ssa_lcor, ('b', 3.4)),
-        "spcomb": (sp_ssa_comb, ('b', 3.4)),
+        "splcor": (ssa_lcor, ('sb', 3.4)),
+        "spcomb": (sp_ssa_comb, ('sb', 3.4)),
     }
 
 def multi_augmented_eigenvector_estimator(data, proc, noise_dim, num_trials):

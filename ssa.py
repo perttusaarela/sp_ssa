@@ -1,6 +1,6 @@
 import numpy as np
 from rjdc import joint_diagonalization
-from utils import sample_mean, sample_covariance, local_sample_covariance, ball_kernel_local_sample_covariance, \
+from utils import sample_mean, sample_covariance, scaled_local_sample_covariance, ball_kernel_local_sample_covariance, \
     ring_kernel_local_sample_covariance, gaussian_kernel_local_sample_covariance, numpy_standardize_data
 from functools import partial
 
@@ -146,8 +146,11 @@ def ssa_lcor(observations, coords, segments, kernel):
 
     m_mat = np.zeros([observations.shape[0], observations.shape[0]])
     if kernel[0] == "b":
-        full_auto_cov = local_sample_covariance(observations, kernel[1], coords)
-        func = partial(local_sample_covariance, data=observations, coords=coords, radius=kernel[1])
+        full_auto_cov = ball_kernel_local_sample_covariance(observations, kernel[1], coords)
+        func = partial(ball_kernel_local_sample_covariance, data=observations, coords=coords, radius=kernel[1])
+    elif kernel[0] == "sb":
+        full_auto_cov = scaled_local_sample_covariance(observations, kernel[1], coords)
+        func = partial(scaled_local_sample_covariance, data=observations, coords=coords, radius=kernel[1])
     elif kernel[0] == "r":
         full_auto_cov = ring_kernel_local_sample_covariance(observations, coords, kernel[1][0], kernel[1][1])
         func = partial(ring_kernel_local_sample_covariance, data=observations, coords=coords, inner_radius=kernel[1][0],
@@ -158,7 +161,7 @@ def ssa_lcor(observations, coords, segments, kernel):
     else:
         full_auto_cov = np.zeros_like(m_mat)
         func = None
-        ValueError("kernel must be either 'b', 'r', or 'g'")
+        ValueError("kernel must be either 'b', 'sb, 'r', or 'g'")
 
     for segment in segments:
         cov_mat = func(segment=segment)
