@@ -6,13 +6,6 @@ def generate_random_orthogonal_matrix(n):
     return ortho_group.rvs(n)
 
 
-def matrix_square_root(matrix):
-    #sq = sqrtm(matrix)
-    eig_vals, eig_vecs = np.linalg.eigh(matrix)
-    ret = eig_vecs.T @ np.diag(1 / np.sqrt(eig_vals)) @ eig_vecs
-    return ret
-
-
 def generate_random_invertible_matrix(p):
     candidate = np.random.rand(p, p)
     while np.linalg.matrix_rank(candidate) != p:
@@ -43,25 +36,7 @@ def sample_covariance(data, segment=None, seg_mean=None):
     return cov
 
 
-def standardize_data(data, mean=None, cov=None):
-    if mean is None and cov is None:
-        cov, mean = sample_covariance(data)
-    if mean is None:
-        mean = sample_mean(data)
-    if cov is None:
-        cov = sample_covariance(data, seg_mean=mean)
-
-    assert all(np.linalg.eigvals(cov) >= 0)  # pos-def
-
-    for i in range(data.shape[1]):
-        data[:, i] -= mean
-
-    sqrt_cov = matrix_square_root(cov)
-
-    return sqrt_cov @ data, sqrt_cov
-
-
-def numpy_standardize_data(data):
+def standardize_data(data):
     data -= data.mean(axis=1, keepdims=True)
     cov = np.cov(data, bias=True, rowvar=True)
     eigvals, eigvecs = np.linalg.eig(cov)
@@ -72,19 +47,7 @@ def numpy_standardize_data(data):
     return sqrt_cov @ data, sqrt_cov
 
 
-def ball_kernel(vec, radius):
-    return 1 if np.linalg.norm(vec) <= radius else 0
-
-
-def ring_kernel(vec, inner_radius, outer_radius):
-    return 1 if inner_radius < np.linalg.norm(vec) <= outer_radius else 0
-
-
 gauss_const = 1.6448536269514722  # \Psi^{-1}(0.95)
-
-
-def gauss_kernel(vec, radius):
-    return np.exp(-0.5 * (gauss_const * np.linalg.norm(vec) / radius)**2)
 
 
 def scaled_local_sample_covariance(data, radius, coords, segment=None, seg_mean=None):

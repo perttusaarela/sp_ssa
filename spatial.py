@@ -132,11 +132,16 @@ def get_segments(partition):
     :param partition: a partition given by partition_coordinates
     :return: (list of indices in each block, a list of number of elements in each block)
     """
-    segments = []
-    seg_sizes = []
-    for idx, part in enumerate(partition):
-        segment = part[-1]
-        seg_sizes.append(len(segment))
-        segments.append(segment)
-    return segments, seg_sizes
+    return [part[-1] for part in partition]
 
+
+def params_to_block_vector(params, segments):
+    # Find maximum index to size the array
+    max_index = max(max(seg) for seg in segments)
+    result = np.zeros(max_index + 1, dtype=float)
+
+    # Assign each segment's parameter to its indices
+    for param, seg in zip(params, segments):
+        result[np.array(seg)] = param
+
+    return result

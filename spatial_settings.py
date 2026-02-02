@@ -1,25 +1,9 @@
 import numpy as np
 from spatial import (generate_coordinates, generate_spatial_data, partition_coordinates,
-                     ssa_matern_covariance, spatial_data_from_cholesky, sort_by_partition)
-import matplotlib.pyplot as plt
+                     ssa_matern_covariance, get_segments,
+                     params_to_block_vector)
 
 NUM_STATIONARY = 5
-
-
-def get_segments(partition):
-    return [part[-1] for part in partition]
-
-
-def params_to_block_vector(params, segments):
-    # Find maximum index to size the array
-    max_index = max(max(seg) for seg in segments)
-    result = np.zeros(max_index + 1, dtype=float)
-
-    # Assign each segment's parameter to its indices
-    for param, seg in zip(params, segments):
-        result[np.array(seg)] = param
-
-    return result
 
 MEANS = [
     [1.5, -1.5],
@@ -31,7 +15,7 @@ def rotate_array(arr):
     return [arr[-1]] + arr[:-1]
 
 # Non-stationarity in mean
-def striped_spatial_setting_1(num_points, side_length=1, seed=None, mean_params=MEANS, debug=False):
+def spatial_setting_1(num_points, side_length=1, seed=None, mean_params=MEANS, debug=False):
     if seed is not None:
         np.random.seed(seed)
     coordinates = generate_coordinates(num_points, side_length)  # uniform coordinates on [0, side_length]^2
@@ -68,16 +52,14 @@ VARS = [
     [0.4, 0.8, 1.5, 1.2]
 ]
 # non-stationarity in variance
-def striped_spatial_setting_2(num_points, side_length=1, seed=None, var_params=VARS, debug=False):
+def spatial_setting_2(num_points, side_length=1, seed=None, var_params=VARS, debug=False):
     if seed is not None:
         np.random.seed(seed)
     coordinates = generate_coordinates(num_points, side_length)
     cov_mat = ssa_matern_covariance(coordinates)
-    #cov_mat = np.identity(num_points)
     cholesky = np.linalg.cholesky(cov_mat)
     # Step 3: Preallocate signals array
     num_signals = NUM_STATIONARY + 3
-    signals = np.zeros((num_signals, num_points))
 
     # Step 4: Generate stationary signals in batch
     Z = np.random.randn(num_points, num_signals)  # all Gaussian vectors at once
@@ -92,11 +74,6 @@ def striped_spatial_setting_2(num_points, side_length=1, seed=None, var_params=V
         variance = params_to_block_vector(params, segs)
         std_vector = np.sqrt(variance)
 
-        # Efficient row-wise multiplication instead of full diagonal matrix
-        #scaled_cholesky = cholesky * std_vector[:, None]
-
-        #spatial_data = spatial_data_from_cholesky(scaled_cholesky)
-        #spatial_data -= spatial_data.mean()
         signals[NUM_STATIONARY + param_idx, :] *= std_vector
 
         if debug:
@@ -122,19 +99,8 @@ CORRS = [
 ]
 
 
-def check_data(data, coords, split):
-    print("Global mean: ", data.mean(axis=1))
-    print("Global variance: ", data.var(axis=1))
-    print("Global cov: ", np.cov(data, rowvar=True, bias=True))
-    print("Local data for split: ", split)
-    for seg in get_segments(partition_coordinates(coords, split[0], split[1], int(np.sqrt(coords.shape[0])))):
-        print("mean: ", data[:, seg].mean(axis=1))
-        print("var: ", data[:, seg].var(axis=1))
-        print("cov: ", np.cov(data[:, seg], rowvar=True, bias=True))
-
-
 # Non-stationarity in autocovariance
-def striped_spatial_setting_3(num_points, side_length=1, seed=None, params_list=CORRS, debug=False):
+def spatial_setting_3(num_points, side_length=1, seed=None, params_list=CORRS, debug=False):
     if seed is not None:
         np.random.seed(seed)
 
@@ -201,7 +167,7 @@ PARAMS = [
     CORRS[CORR_IDX],
 ]
 
-def striped_spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, debug=False):
+def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, debug=False):
     if seed is not None:
         np.random.seed(seed)
 
@@ -219,8 +185,6 @@ def striped_spatial_setting_4(num_points, side_length=1, seed=None, params_list=
     # Step 4: Stationary signals (batch)
     Z = np.random.randn(num_points, NUM_STATIONARY + 2)
     stationary_signals = (cholesky @ Z).T
-    #stationary_signals -= stationary_signals.mean(axis=1, keepdims=True)
-    #stationary_signals /= stationary_signals.std(axis=1, keepdims=True)
     signals[:NUM_STATIONARY + 2, :] = stationary_signals
 
     # Step 5: Mean signal (2 stripes)
@@ -282,7 +246,7 @@ def striped_spatial_setting_4(num_points, side_length=1, seed=None, params_list=
 
 
 if __name__ == "__main__":
-    sigs, coords = striped_spatial_setting_3(num_points=2500, side_length=50)
+    sigs, coords = spatial_setting_3(num_points=2500, side_length=50)
     print("global mean: ", sigs.mean(axis=1))
     print("global var: ", sigs.var(axis=1))
     for split in range(2, 5):

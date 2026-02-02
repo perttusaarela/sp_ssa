@@ -1,7 +1,7 @@
 import numpy as np
 from rjdc import joint_diagonalization
 from utils import sample_mean, sample_covariance, scaled_local_sample_covariance, ball_kernel_local_sample_covariance, \
-    ring_kernel_local_sample_covariance, gaussian_kernel_local_sample_covariance, numpy_standardize_data
+    ring_kernel_local_sample_covariance, gaussian_kernel_local_sample_covariance, standardize_data
 from functools import partial
 
 
@@ -25,7 +25,7 @@ def compare_as_projectors(mat1, mat2):
 # This class will be the top level object for all SSA procedures
 class SSA:
     def __init__(self, data, num_non_stationary=0):
-        white_signals, whitener = numpy_standardize_data(data)
+        white_signals, whitener = standardize_data(data)
         self.data = white_signals
         self.whitener = whitener
         self.nonstationary_dim = num_non_stationary
@@ -49,8 +49,8 @@ class SSA:
         ss, ns = res.get_subspaces(whitener=self.whitener, num_non_stationary=self.nonstationary_dim)
         return ss, ns
 
-    def comb(self, coords, segments, kernel, scale=False):
-        res = sp_ssa_comb(self.data, coords, segments, kernel, scale=scale)
+    def comb(self, coords, segments, kernel):
+        res = sp_ssa_comb(self.data, coords, segments, kernel)
         ss, ns = res.get_subspaces(whitener=self.whitener, num_non_stationary=self.nonstationary_dim)
         self.aux = res.aux
         return ss, ns
@@ -146,7 +146,7 @@ def ssa_lcor(observations, coords, segments, kernel):
 
     m_mat = np.zeros([observations.shape[0], observations.shape[0]])
     if kernel[0] == "b":
-        full_auto_cov = ball_kernel_local_sample_covariance(observations, kernel[1], coords)
+        full_auto_cov = ball_kernel_local_sample_covariance(data=observations, radius=kernel[1], coords=coords)
         func = partial(ball_kernel_local_sample_covariance, data=observations, coords=coords, radius=kernel[1])
     elif kernel[0] == "sb":
         full_auto_cov = scaled_local_sample_covariance(observations, kernel[1], coords)

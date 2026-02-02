@@ -1,20 +1,27 @@
 import pickle
 import numpy as np
-from spatial_settings import (striped_spatial_setting_1, striped_spatial_setting_2, striped_spatial_setting_3,
-                              striped_spatial_setting_4, partition_coordinates, get_segments)
+from spatial import get_segments, partition_coordinates
 from ssa import ssa_sir, ssa_save, ssa_lcor, sp_ssa_comb, SSAResultsObject
-from utils import generate_random_orthogonal_matrix, numpy_standardize_data
-from functools import partial
-from timeit import default_timer as timer
 
 
 def augment_data(data, noise_dim):
+    """
+    Creates a new numpy array of data with noise_dim random gaussian vectors appended to data
+    :param data: D x N numpy array of data
+    :param noise_dim: Integer indicating how many noise vectors to add
+    :return: (D + noise_dim, N) numpy array of augmented data
+    """
     dim, num_points = data.shape
     aug_data = np.random.randn(noise_dim, num_points)
     return np.vstack((data, aug_data))
 
 
 def normalized_scree_plot(eigenvalues):
+    """
+    Computes the normalized screen plot
+    :param eigenvalues: a list of eigenvalues, assumes that they are in descending order
+    :return: scree plot
+    """
     abs_eigs = np.abs(eigenvalues)
     normalizer = np.cumsum(abs_eigs)
     phi_vec = np.zeros_like(abs_eigs)
