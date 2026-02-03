@@ -14,6 +14,7 @@ python3 simulations.py -r
 '''
 By default both of these calls assume that you have installed the relevant packages from the requirements.txt file, and that the following directory structure is in your current working directory:
 
+'''
 data/
 ├── rank/
 │   └── results/
@@ -23,6 +24,7 @@ data/
     ├── setting3/
     ├── setting4/
     └── results/
+'''
 
   ### Description
 
@@ -38,6 +40,6 @@ data/
   - **setting1–setting4/**: Different settings for parameters and types of nonstationarities.
   - **results/**: Final results from spSSA simulations.
  
-  ## Plotting the results
+## Plotting the results
 
-  Once data has been simulated with the above commands, the plots of the paper can be replicated by using the functions from the file plots.py
+Once data has been simulated with the above commands, the plots of the paper can be replicated by using the functions from the file plots.py
