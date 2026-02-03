@@ -2,6 +2,10 @@
 
 This repositry can be used to reproduce the simulations for the paper: (to be added)
 
+## Initialization
+
+Note that the python code uses interfaced C-code which needs to be compiled separately. Before running any code, one should call ```make``` in the c_src directory.
+
 ## Reproducing simulation results
 
 To reproduce the results seen in the paper, simply call simulations.py with the appropriate flag. The flag -h or --help gives more instructions. For example, to get the results from Simulations 1 for Setting 4, simply run
