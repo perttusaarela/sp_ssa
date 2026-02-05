@@ -259,8 +259,34 @@ def create_map(ax):
 
     return coords
 
+from matplotlib.patches import Circle
+def polygon_example():
+    fig, axes = plt.subplots(1, 2, figsize=(10, 6))
+    coords = create_map(axes[0])
+    center = coords[147]
+    circle = Circle(center, 50000, edgecolor='red', facecolor='none',
+                    linewidth=1, alpha=0.8, zorder=3)
+    axes[0].add_patch(circle)
+
+    create_map(axes[1])
+
+    with open("polygons1.json") as f:
+        polys = json.load(f)
+
+    for poly in polys:
+        poly = np.asarray(poly)
+        axes[1].plot(poly[:, 0], poly[:, 1], zorder=3)
+
+    plt.tight_layout()
+    plt.savefig("kola_map.pdf", dpi=300)
+    plt.show()
+
 
 if __name__ == "__main__":
+
+    polygon_example()
+    exit()
+
     fig, ax = plt.subplots(figsize=(8, 8), frameon=False)
 
     points = create_map(ax)

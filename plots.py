@@ -458,12 +458,11 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
 
 if __name__ == '__main__':
     #nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, save=False, plot=True)
-    nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, save=False, plot=True)
+    #nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, save=False, plot=True)
 
     #subspace_folder = "data/subspace/results"
     #plot_folder(subspace_folder, show=True, save=False)
 
-    exit()
     rank_folder = 'data/rank/results'
     rank_folder = 'data/final/rank/sl40split4x4'
     for file in os.listdir(rank_folder):
