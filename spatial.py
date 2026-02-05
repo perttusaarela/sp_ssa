@@ -145,3 +145,62 @@ def params_to_block_vector(params, segments):
         result[np.array(seg)] = param
 
     return result
+
+
+def points_in_polygon(points, polygon):
+    points = np.asarray(points)
+    polygon = np.asarray(polygon)
+
+    x = points[:, 0]
+    y = points[:, 1]
+
+    x1 = polygon[:, 0]
+    y1 = polygon[:, 1]
+    x2 = np.roll(x1, -1)
+    y2 = np.roll(y1, -1)
+
+    dy = y2 - y1
+    non_horizontal = dy != 0
+
+    # Only consider non-horizontal edges
+    x1 = x1[non_horizontal]
+    y1 = y1[non_horizontal]
+    x2 = x2[non_horizontal]
+    y2 = y2[non_horizontal]
+    dy = dy[non_horizontal]
+
+    # Ray casting condition
+    cond = ((y1[:, None] > y) != (y2[:, None] > y))
+
+    xinters = (x2[:, None] - x1[:, None]) * (y - y1[:, None]) / dy[:, None] + x1[:, None]
+
+    crossings = cond & (x < xinters)
+    return np.sum(crossings, axis=0) % 2 == 1
+
+
+def partition_points_by_polygons(points, polygons):
+    points = np.asarray(points)
+
+    partitions = []
+    assigned = np.zeros(len(points), dtype=bool)
+
+    for poly in polygons:
+        mask = points_in_polygon(points, poly) & (~assigned)
+        idx = np.nonzero(mask)[0]
+        partitions.append(idx)
+        assigned |= mask
+
+    unassigned = points[~assigned]
+    return partitions, unassigned
+
+
+if __name__ == "__main__":
+    coords = generate_coordinates(400, 10)
+    poly = np.asarray([[5, 0], [0, 5], [5, 10], [10, 5]])
+    a, b = partition_points_by_polygons(coords, [poly])
+    print(a[0].shape)
+    print(b.shape)
+
+
+
+

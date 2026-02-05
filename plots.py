@@ -274,8 +274,9 @@ def rank_plot(data, save=False, plot=True, save_file=None):
     ax.legend(
         handles,
         labels,
-        title="Score",
+        title=r"$\hat{q}$",
         bbox_to_anchor=(1.10, 1),
+        fontsize=12,
         loc='upper left'
     )
 
@@ -456,16 +457,17 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
 
 
 if __name__ == '__main__':
-    nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, save=False, plot=True)
+    #nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, save=False, plot=True)
     nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, save=False, plot=True)
 
-    subspace_folder = "data/subspace/results"
-    plot_folder(subspace_folder, show=True, save=False)
+    #subspace_folder = "data/subspace/results"
+    #plot_folder(subspace_folder, show=True, save=False)
 
-
+    exit()
     rank_folder = 'data/rank/results'
+    rank_folder = 'data/final/rank/sl40split4x4'
     for file in os.listdir(rank_folder):
         print(file)
         with open(os.path.join(rank_folder, file), "rb") as f:
             data = pickle.load(f)
-            rank_plot(data, save=False, plot=True, save_file=f"plots/{file[:-4]}.pdf")
+            rank_plot(data, save=True, plot=False, save_file=f"plots/{file[:-4]}.pdf")
