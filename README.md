@@ -2,6 +2,8 @@
 
 This repositry can be used to reproduce the simulations for the paper: (to be added)
 
+Note that the C-code is taken from the CRAN R-package JADE under the GPL license. The original package can be found at: https://cran.r-project.org/package=JADE
+
 ## Initialization
 
 Note that the python code uses interfaced C-code which needs to be compiled separately. Before running any code, one should call ```make``` in the c_src directory.
