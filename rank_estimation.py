@@ -68,9 +68,27 @@ def ssa_procedure(data, coords, sl, ssa_method=sp_ssa_comb, split=(3,3), kernel=
     return ssa_res.diagonalizer, ssa_res.diagonal
 
 
+def ssa_procedure_from_segs(data, coords, segs, ssa_method=sp_ssa_comb, kernel=('g', 1)):
+    if kernel is None:
+        ssa_res = ssa_method(observations=data, segments=segs)
+    else:
+        ssa_res = ssa_method(observations=data, coords=coords, segments=segs, kernel=kernel)
+    ssa_res.sort_by_magnitude()
+    return ssa_res.diagonalizer, ssa_res.diagonal
+
+
 def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('sb', 3.4)):
     part = partition_coordinates(coords, split[0], split[1], sl)
     segs = get_segments(part)
+    res = sp_ssa_comb(data, coords, segs, kernel=kernel)
+    res.sort_by_magnitude()
+    for method, obj in res.aux.items():
+        obj.sort_by_magnitude()
+
+    return res
+
+
+def all_ssa_procedures_from_segs(data, coords, segs, kernel=('sb', 3.4)):
     res = sp_ssa_comb(data, coords, segs, kernel=kernel)
     res.sort_by_magnitude()
     for method, obj in res.aux.items():

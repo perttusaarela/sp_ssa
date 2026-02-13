@@ -1,0 +1,11 @@
+install.packages("StatDA")
+library(StatDA)
+data("moss")
+data("bordersKola")
+data("kola.background")
+
+write.csv(moss, "data/kola/moss_data.csv")
+write.csv(kola.background$boundary, "data/kola/kola_boundary.csv")
+write.csv(kola.background$coast, "data/kola/kola_coast.csv")
+write.csv(kola.background$borders, "data/kola/kola_borders.csv")
+write.csv(kola.background$lakes, "data/kola/kola_lakes.csv")
