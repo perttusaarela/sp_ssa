@@ -216,10 +216,10 @@ class PolygonDrawer:
 
 
 def create_map(ax):
-    borders = pd.read_csv("kola_borders.csv")
-    boundary = pd.read_csv("kola_boundary.csv")
-    coast = pd.read_csv("kola_coast.csv")
-    lakes = pd.read_csv("kola_lakes.csv")
+    borders = pd.read_csv("data/kola/kola_borders.csv")
+    boundary = pd.read_csv("data/kola/kola_boundary.csv")
+    coast = pd.read_csv("data/kola/kola_coast.csv")
+    lakes = pd.read_csv("data/kola/kola_lakes.csv")
 
     ax.plot(coast.V1, coast.V2, color="#4F4F4F", zorder=1)
     ax.plot(lakes.V1, lakes.V2, color="#B3E5FC", zorder=1)
@@ -245,7 +245,7 @@ def create_map(ax):
     )
 
     # Moss data
-    df = pd.read_csv("moss_data.csv")
+    df = pd.read_csv("data/kola/moss_data.csv")
     coords = df.values[:, 2:4]
     ax.scatter(
         coords[:, 0], coords[:, 1],
