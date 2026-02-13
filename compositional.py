@@ -2,13 +2,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import json
-
-from sympy import partition
-
 from spatial import partition_points_by_polygons
 from utils import standardize_data
-from rank_estimation import (ssa_procedure_from_segs, augmented_eigenvector_estimator, normalized_scree_plot,
-                             all_ssa_procedures_from_segs, multi_estimate_rank)
+from rank_estimation import ssa_procedure_from_segs, augmented_eigenvector_estimator, normalized_scree_plot
 from ssa import SSA
 from functools import partial
 
@@ -49,10 +45,10 @@ def create_map(ax=None, polygons=None, vals=None, bins=None, percentiles=None, s
         fig, ax = plt.subplots(frameon=False)
 
     # Load data
-    borders = pd.read_csv("kola_borders.csv")
-    boundary = pd.read_csv("kola_boundary.csv")
-    coast = pd.read_csv("kola_coast.csv")
-    lakes = pd.read_csv("kola_lakes.csv")
+    borders = pd.read_csv("data/kola/kola_borders.csv")
+    boundary = pd.read_csv("data/kola/kola_boundary.csv")
+    coast = pd.read_csv("data/kola/kola_coast.csv")
+    lakes = pd.read_csv("data/kola/kola_lakes.csv")
 
     ax.plot(coast.V1, coast.V2, color="#4F4F4F", zorder=1)
     ax.plot(lakes.V1, lakes.V2, color="#B3E5FC", zorder=1)
@@ -66,14 +62,14 @@ def create_map(ax=None, polygons=None, vals=None, bins=None, percentiles=None, s
     y_max = max(coast.V2.max(), lakes.V2.max(), borders.V2.max(), boundary.V2.max())
 
     # Moss data
-    df = pd.read_csv("moss_data.csv")
+    df = pd.read_csv("data/kola/moss_data.csv")
     coords = df.values[:, 2:4]
 
     if vals is None:
         ax.scatter(coords[:, 0], coords[:, 1], marker="x", color="#D3D3D3", zorder=3)
 
-    ax.set_xlim(x_min - 30000, x_max + 30000)
-    ax.set_ylim(y_min - 30000, y_max + 30000)
+    ax.set_xlim(x_min - 5000, x_max + 5000)
+    ax.set_ylim(y_min - 5000, y_max + 5000)
     ax.set_aspect("equal", adjustable="datalim")
     ax.axis("off")
 
@@ -125,11 +121,13 @@ def create_map(ax=None, polygons=None, vals=None, bins=None, percentiles=None, s
                 markerscale=2.5,
             )
 
-def read_polygons():
-    with open("polygons1.json") as f:
+def read_polygons(poly_file, old=False):
+    with open(poly_file) as f:
         data = json.load(f)
-
-    return data
+    # If old is True, we used the original polygon JSON which has no colors
+    # and can thus be returned as is.
+    if old:
+        return data
 
     polygons = []
     for item in data:
@@ -140,10 +138,10 @@ def read_polygons():
 
 
 def plot_part(part, coords):
-    borders = pd.read_csv("kola_borders.csv")
-    boundary = pd.read_csv("kola_boundary.csv")
-    coast = pd.read_csv("kola_coast.csv")
-    lakes = pd.read_csv("kola_lakes.csv")
+    borders = pd.read_csv("data/kola/kola_borders.csv")
+    boundary = pd.read_csv("data/kola/kola_boundary.csv")
+    coast = pd.read_csv("data/kola/kola_coast.csv")
+    lakes = pd.read_csv("data/kola/kola_lakes.csv")
     plt.figure(frameon=False)
     plt.plot(coast.V1, coast.V2, color="#4F4F4F")
     plt.plot(lakes.V1, lakes.V2, color="#B3E5FC")
@@ -185,36 +183,28 @@ def ladle_plots(k_vec, f_vec, phi_vec, g_vec, q_hat):
         ax.set_xlabel("k")
 
     fig.tight_layout()
-    plt.savefig("plots/ladle.pdf", dpi=300)
+    plt.savefig("plots/ladle.pdf", dpi=800)
     plt.show()
 
 
-if __name__ == "__main__":
-    PRINT = False
-    df = pd.read_csv("moss_data.csv")
-
-    noise_dim = 5
-    num_trials = 10
-    cols = ["Ag","Al","As","B","Ba","Be","Bi","Ca","Cd","Co","Cr","Cu","Fe","Hg","K","La","Mg","Mn","Mo","Na",
-            "Ni","P","Pb","Rb","S","Sb","Sc","Se","Si","Sr","Th","Tl","U","V","Y","Zn"]  # Au, Pd, Pt have NaNs
+def analyse_kola_data(s=10, r=10):
+    df = pd.read_csv("data/kola/moss_data.csv")
+    noise_dim = r
+    num_trials = s
+    cols = ["Ag", "Al", "As", "B", "Ba", "Be", "Bi", "Ca", "Cd", "Co", "Cr", "Cu", "Fe", "Hg", "K", "La", "Mg", "Mn",
+            "Mo", "Na",
+            "Ni", "P", "Pb", "Rb", "S", "Sb", "Sc", "Se", "Si", "Sr", "Th", "Tl", "U", "V", "Y",
+            "Zn"]  # Au, Pd, Pt have NaNs
     values = df[cols].values
     coords = df[["XCOO", "YCOO"]].values
 
-    polygons = read_polygons()
-    #create_map(polygons, save=True)
-
+    polygons = read_polygons("polygons1.json", old=True)
     partition = partition_points_by_polygons(coords, polygons)
-    if PRINT:
-        for part in partition[0]:
-            plot_part(part, coords)
-        # plot_part(partition[1], coords)
 
     values = values.T
-    print(values.shape)
     values = ilr(clr(values))
 
     std_values, whitener = standardize_data(values)
-    print(values.shape)
 
     func = partial(ssa_procedure_from_segs, coords=coords, segs=partition[0], kernel=('sb', 50000))
 
@@ -225,75 +215,111 @@ if __name__ == "__main__":
     g_vec = cum_f_vec + phi_vec
 
     rank = np.argmin(g_vec)
-    print(rank)
-
-    #ladle_plots(range(len(g_vec)), cum_f_vec, phi_vec, g_vec, q_hat=rank)
-
-    #ax.figure.savefig("plots/ladle.pdf", bbox_inches="tight", dpi=300)
-
-    #plt.show()
-
-
-    #func = partial(all_ssa_procedures_from_segs, coords=coords, segs=partition[0], kernel=('sb', 50000))
-    #rank = multi_estimate_rank(std_values, func, noise_dim, num_trials)['spcomb']
 
     ssa_obj = SSA(values, num_non_stationary=rank)
-    print(np.allclose(whitener, ssa_obj.whitener))
     ss, ns = ssa_obj.comb(coords, partition[0], kernel=('sb', 50000))
-    np.random.seed(1)
+
     ss_vals = (ss @ std_values)
     ns_vals = (ns @ std_values)
-    print(ss_vals.min(), ss_vals.max(), ss_vals.mean(), ss_vals.std())
-    print(ns_vals.min(), ns_vals.max(), ns_vals.mean(), ns_vals.std())
-    random_ss = (ss @ std_values)[np.random.randint(low=0, high=len(ss)),:]
-    random_ns = (ns @ std_values)[np.random.randint(low=0, high=len(ns)),:]
-    print(random_ns.shape)
-    print(random_ss.shape)
 
-    min_val = min(random_ns.min(), random_ss.min())
+    res_dict = {
+        "f_vec": cum_f_vec,
+        "phi_vec": phi_vec,
+        "g_vec": g_vec,
+        "ss_vals": ss_vals,
+        "ns_vals": ns_vals,
+        "rank": rank
+    }
 
-    print(random_ss.min(), random_ss.max(), random_ss.mean(), random_ss.std())
-    print(random_ns.min(), random_ns.max(), random_ns.mean(), random_ns.std())
-    max_val = max(random_ns.max(), random_ss.max())
+    return res_dict
 
-    # Example: 6 different 'vals' arrays
-    vals_list = [ns_vals[0], ns_vals[1], ns_vals[2], ns_vals[3], ns_vals[4], random_ss]  # each is a 1D array
+
+def plot_kola_results(ns_vals, ss_vals, ss_idx):
+    vals_list = [ns_vals[0], ns_vals[1], ns_vals[2], ns_vals[3], ns_vals[4], ss_vals[ss_idx]]
     labels = [r"$\mathbf{n}_1$", r"$\mathbf{n}_2$", r"$\mathbf{n}_3$", r"$\mathbf{n}_4$", r"$\mathbf{n}_5$",
-                   r"$\mathbf{s}$"]
+              r"$\mathbf{{s}}_{21}$"]
+
     # Compute shared bins
     bins, percentiles = compute_percentile_bins(vals_list)
 
     # Create subplots
-    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(12, 12))
+    fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 8))
     axes = axes.ravel()  # flatten to 1D for easy iteration
 
     # Plot each
     for i, ax in enumerate(axes):
         # Only show legend on the first subplot
-        show_legend = (i == 1)
-        create_map(ax=ax, vals=vals_list[i], bins=bins, percentiles=percentiles, show_legend=show_legend)
+        # show_legend = (i == 1)
+        create_map(ax=ax, vals=vals_list[i], bins=bins, percentiles=percentiles, show_legend=False)
 
         # Add subplot label/title
         ax.text(
-            0.55, 0.86,  # x=0.5 centers, y=1.02 slightly above top
+            0.69, 0.79,  # x=0.5 centers, y=1.02 slightly above top
             labels[i],
             transform=ax.transAxes,  # relative to axes [0,1]
             ha='center', va='bottom',
             fontsize=14, fontweight='bold'
         )
 
+    # ----- Create shared legend -----
+    num_buckets = len(bins) - 1
+
+    markers = ['o', 's', '^', 'D', 'P', 'H', 'X'][:num_buckets]
+
+    grays = [
+        "#FFFFFF",
+        "#D9D9D9",
+        "#B3B3B3",
+        "#808080",
+        "#4D4D4D",
+        "#262626",
+        "#000000",
+    ][:num_buckets]
+
+    from matplotlib.lines import Line2D
+
+    legend_elements = [
+        Line2D(
+            [0], [0],
+            marker=markers[b],
+            color='black',
+            markerfacecolor=grays[b],
+            markersize=10,
+            linestyle='None',
+            label=f'{percentiles[b]}–{percentiles[b + 1]}%'
+        )
+        for b in range(num_buckets)
+    ]
+
+    fig.legend(
+        handles=legend_elements,
+        loc='lower center',
+        ncol=num_buckets,  # single row
+        frameon=True,
+        fontsize=14,
+        bbox_to_anchor=(0.5, 0.06)
+    )
+
     # Reduce space between subplots
     plt.subplots_adjust(
         left=0.05, right=0.95,
-        top=0.95, bottom=0.05,
-        hspace=0.025, wspace=-0.5  # horizontal and vertical spacing
+        top=0.80, bottom=0.02,  # increase bottom space
+        hspace=0.05, wspace=0.02
     )
+    plt.tight_layout(rect=[0.05, 0.08, 0.95, 0.98])
+    plt.savefig("plots/kola_ssa_2.pdf", dpi=800)
 
-    plt.savefig("plots/kola_ssa.pdf", dpi=300)
-
-    #plt.tight_layout()
     plt.show()
 
-
-
+GEN_RANDOM = False
+if __name__ == "__main__":
+    #create_map(polygons, save=True)
+    ret = analyse_kola_data(s=10, r=10)
+    ladle_plots(range(len(ret["g_vec"])), ret["f_vec"], ret["phi_vec"], ret["g_vec"], q_hat=ret["rank"])
+    if GEN_RANDOM:
+        ss_idx = np.random.randint(low=0, high=len(ret["ss_vals"]))
+        print(ss_idx)  # this gave 21, keep it fixed for the plots
+    else:
+        ss_idx = 21
+    plot_kola_results(ret["ns_vals"], ret["ss_vals"], ss_idx)
 

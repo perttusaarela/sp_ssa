@@ -52,12 +52,12 @@ class PolygonDrawer:
         if event.inaxes != self.ax:
             return
 
-        # Left click → add vertex
+        # Left click to add vertex
         if event.button == 1:
             self.current.append((event.xdata, event.ydata))
             self._update_current()
 
-        # Right click → close polygon
+        # Right click to close polygon
         elif event.button == 3 and len(self.current) >= 3:
             self._close_polygon()
 
@@ -277,20 +277,18 @@ def polygon_example():
         poly = np.asarray(poly)
         axes[1].plot(poly[:, 0], poly[:, 1], zorder=3)
 
-    plt.tight_layout()
-    plt.savefig("kola_map.pdf", dpi=300)
+    # Remove spacing between subplots and figure edges
+    plt.subplots_adjust(left=0.1, right=1.1, top=1, bottom=0, wspace=0.1, hspace=0)
+
+    plt.tight_layout(pad=0.5)  # tighter layout
+    plt.savefig("kola_map.pdf", dpi=800, bbox_inches='tight', pad_inches=0)
     plt.show()
 
 
-if __name__ == "__main__":
-
-    polygon_example()
-    exit()
-
+def kola_polygon_drawer():
     fig, ax = plt.subplots(figsize=(8, 8), frameon=False)
 
     points = create_map(ax)
-    #ax.figure.savefig("plots/kola.pdf", bbox_inches="tight")
     drawer = PolygonDrawer(ax, points)
 
     ax.set_title(
@@ -304,3 +302,9 @@ if __name__ == "__main__":
 
     polygons = drawer.get_polygons()
     print(f"{len(polygons)} polygons drawn")
+
+
+if __name__ == "__main__":
+    kola_polygon_drawer()
+    exit()
+

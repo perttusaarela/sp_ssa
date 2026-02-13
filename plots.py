@@ -15,8 +15,8 @@ mpl.rcParams.update({
     'legend.fontsize': 9,
     'xtick.labelsize': 9,
     'ytick.labelsize': 9,
-    'figure.dpi': 300,
-    'savefig.dpi': 300,
+    'figure.dpi': 800,
+    'savefig.dpi': 800,
     'text.usetex': True,
     'lines.linewidth': 1.2,
     'lines.markersize': 4,
@@ -120,7 +120,7 @@ def ssa_plot(file, show=True, save=False):
     plt.tight_layout(rect=[0.01, 0.01, 1, 0.95])  # Make room for the legend and title
 
     if save:
-        plt.savefig(f"plots/new/{file[:-4]}.pdf", dpi=300, format='pdf')
+        plt.savefig(f"plots/new/{file[-8:-4]}.pdf", dpi=800, format='pdf')
 
     if show:
         plt.show()
@@ -284,9 +284,9 @@ def rank_plot(data, save=False, plot=True, save_file=None):
 
     if save:
         if save_file is None:
-            plt.savefig("plots/plot.pdf", dpi=300, format='pdf')
+            plt.savefig("plots/plot.pdf", dpi=800, format='pdf')
         else:
-            plt.savefig(save_file, dpi=300, format='pdf')
+            plt.savefig(save_file, dpi=800, format='pdf')
 
     if plot:
         plt.show()
@@ -363,7 +363,7 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
             sl = slice(i * points_per_unit, (i + 1) * points_per_unit)
             values[sl] -= values[sl].mean()
             values[sl] += means[i // 3, i % 3]
-        label_stat = "Mean"
+        label_stat = "mean"
 
     elif type_sel == "v":
         var = np.array([
@@ -376,7 +376,7 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
             values[sl] -= values[sl].mean()
             values[sl] /= values[sl].std()
             values[sl] *= np.sqrt(var[i // 3, i % 3])
-        label_stat = "Variance"
+        label_stat = "variance"
 
     values = (values - values.mean()) / values.std()
 
@@ -448,23 +448,22 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
 
     if save:
         if save_file is None:
-            plt.savefig(f"plots/partition_plot_{label_stat}_{nx}.pdf", dpi=300, format='pdf')
+            plt.savefig(f"plots/partition_plot_{label_stat}_{nx}.pdf", dpi=800, format='pdf')
         else:
-            plt.savefig(save_file, dpi=300, format='pdf')
+            plt.savefig(save_file, dpi=800, format='pdf')
 
     if plot:
         plt.show()
 
 
 if __name__ == '__main__':
-    #nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, save=False, plot=True)
-    #nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, save=False, plot=True)
+    nonstationarity_example(seed=2343, type_sel="v", nx=2, ny=2, save=True, plot=False)
+    nonstationarity_example(seed=2343, type_sel="v", nx=3, ny=3, save=True, plot=False)
 
-    #subspace_folder = "data/subspace/results"
-    #plot_folder(subspace_folder, show=True, save=False)
+    subspace_folder = "data/subspace/results"
+    plot_folder(subspace_folder, show=False, save=True)
 
     rank_folder = 'data/rank/results'
-    rank_folder = 'data/final/rank/sl40split4x4'
     for file in os.listdir(rank_folder):
         print(file)
         with open(os.path.join(rank_folder, file), "rb") as f:
