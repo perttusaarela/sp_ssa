@@ -1,12 +1,12 @@
 # Stationary subspace analysis for spatial data
 
-This repositry can be used to reproduce the simulations for the paper: (to be added)
+This repositry can be used to reproduce the simulations for the paper: STATIONARY SUBSPACE ANALYSIS FOR SPATIAL DATA
 
 Note that the C-code is taken from the CRAN R-package JADE under the GPL license. The original package can be found at: https://cran.r-project.org/package=JADE
 
 ## Initialization
 
-Note that the python code uses interfaced C-code which needs to be compiled separately. Before running any code, one should call ```make``` in the c_src directory.
+Note that the python code uses interfaced C-code which needs to be compiled separately. Before running any code, one should call ```make``` in the c_src directory. For Linux users, simply run ```./init.sh``` to make the C-files, initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```.
 
 ## Reproducing simulation results
 
@@ -23,6 +23,7 @@ By default both of these calls assume that you have installed the relevant packa
 
 ```
 data/
+├── kola/
 ├── rank/
 │   └── results/
 └── subspace/
@@ -34,9 +35,12 @@ data/
 ```
 
   ### Description
-
+  
 - **data/**  
   Root directory for all datasets and outputs.
+
+- **kola/**  
+  Contains the Kola moss and map data.
 
 - **rank/**  
   Contains data and outputs related to rank estimation simulations (Simulation 2).
