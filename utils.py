@@ -36,11 +36,11 @@ def sample_covariance(data, segment=None, seg_mean=None):
     return cov
 
 
-def standardize_data(data):
+def standardize_data(data, eps=1e-8):
     data -= data.mean(axis=1, keepdims=True)
     cov = np.cov(data, bias=True, rowvar=True)
-    eigvals, eigvecs = np.linalg.eig(cov)
-
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = np.maximum(eigvals, eps) #prevent division by zero,negative numerical noise
     # Compute A^{-1/2}
     sqrt_cov = eigvecs @ np.diag(1 / np.sqrt(eigvals)) @ eigvecs.T
 

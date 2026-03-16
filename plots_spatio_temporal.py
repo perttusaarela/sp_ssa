@@ -4,8 +4,9 @@ import matplotlib as mpl
 import os
 import pickle
 import seaborn as sns
-from spatial import generate_coordinates, generate_spatial_data, ssa_matern_covariance
+from spatio_temporal import generate_spatiotemporal_coordinates, generate_spatiotemporal_data, ssa_matern_covariance
 sns.set_palette("colorblind")  # This updates matplotlib too
+from sklearn.gaussian_process.kernels import Matern
 # plot settings
 mpl.rcParams.update({
     'font.family': 'serif',
@@ -17,7 +18,7 @@ mpl.rcParams.update({
     'ytick.labelsize': 9,
     'figure.dpi': 800,
     'savefig.dpi': 800,
-    'text.usetex': True,
+    'text.usetex': False,
     'lines.linewidth': 1.2,
     'lines.markersize': 4,
     'axes.spines.top': False,
@@ -27,7 +28,26 @@ mpl.rcParams.update({
     'grid.alpha': 0.7
 })
 
-SPLITS = [(2, 2), (3, 3), (4, 4)]
+def generate_coordinates(n, hi=1):
+    return hi * np.random.rand(n, 2)
+
+def spatial_matern_covariance(points, nu=0.5, phi=1.0, sigma=1.0):
+    matern = Matern(length_scale=phi * np.sqrt(2 * nu), nu=nu)
+    return sigma * matern(points)
+
+def generate_spatial_data(covariance_matrix, mean=None, jitter=1e-6):
+    if mean is None:
+        mean = np.zeros(covariance_matrix.shape[0])
+
+    cov = np.asarray(covariance_matrix, dtype=float)
+    cov = 0.5 * (cov + cov.T)
+    cov = cov + jitter * np.eye(cov.shape[0])
+
+    cholesky = np.linalg.cholesky(cov)
+    z = np.random.randn(cov.shape[0])
+    return cholesky @ z + mean
+
+SPLITS = [(2, 2, 2), (3, 3, 3), (4, 4, 4)]
 NOISE_DIMS = [1, 5, 10, 15]
 METHODS = ["spsir", "spsave", "splcor", "spcomb", "random"]
 MARKERS ={
@@ -59,7 +79,9 @@ def ssa_plot(file, show=True, save=False):
     :param show: Boolean for whether to show the plots
     :param save: Boolean for whether to save the plots
     """
-    x_axis = [x ** 2 for x in range(20, 80, 10)]
+    loc_arr = [50, 100, 200]
+    time_arr = [5, 10]
+    x_axis = [l * t for l in loc_arr for t in time_arr]
 
     fig, axes = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=True,
                              figsize=(5.5, 3.5))  # we make three plots, one for each split
@@ -68,8 +90,8 @@ def ssa_plot(file, show=True, save=False):
     with open(file, 'rb') as f:
         data = pickle.load(f)
         for met, method_data in data.items():
-            for data_by_num_points in method_data.values():
-                for idx, data_by_split in enumerate(data_by_num_points.values()):
+            for data_by_size in method_data.values():
+                for idx, data_by_split in enumerate(data_by_size.values()):
                     separated_data_ss[idx][met].append(data_by_split[0])
                     separated_data_ns[idx][met].append(data_by_split[1])
 
@@ -113,7 +135,7 @@ def ssa_plot(file, show=True, save=False):
                     ax.yaxis.set_label_position("right")
                     ax.set_ylabel("Stationary", rotation=270, labelpad=15)
                 if row_idx == 1 and col_idx == 1:
-                    ax.set_xlabel("Number of points")
+                    ax.set_xlabel("Total observations (locations * times)")
 
     # Add a single legend to the entire figure
     fig.legend(method_lines, method_labels, loc='lower center', ncol=len(METHODS), bbox_to_anchor=(0.5, -0.025))
@@ -354,7 +376,7 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
     x, y = coords[:, 0], coords[:, 1]
 
     # generate values
-    cov = ssa_matern_covariance(coords)
+    cov = spatial_matern_covariance(coords)
     values = generate_spatial_data(cov)
 
     if type_sel == "m":
@@ -399,7 +421,10 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
     def gray(val):
         if not np.isfinite(val):
             return 0.95
-        t = np.clip((val - vmin) / (vmax - vmin), 0, 1)
+        den = vmax - vmin
+        if den < 1e-12:
+            return 0.5
+        t = np.clip((val - vmin) / den, 0, 1)
         return 0.95 - 0.85 * t
 
     # Create actual plots
@@ -457,15 +482,17 @@ def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save
 
 
 if __name__ == '__main__':
+    nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, save=True, plot=False)
+    nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, save=True, plot=False)
     nonstationarity_example(seed=2343, type_sel="v", nx=2, ny=2, save=True, plot=False)
     nonstationarity_example(seed=2343, type_sel="v", nx=3, ny=3, save=True, plot=False)
 
     subspace_folder = "data/subspace/results"
     plot_folder(subspace_folder, show=False, save=True)
 
-    rank_folder = 'data/rank/results'
-    for file in os.listdir(rank_folder):
-        print(file)
-        with open(os.path.join(rank_folder, file), "rb") as f:
-            data = pickle.load(f)
-            rank_plot(data, save=True, plot=False, save_file=f"plots/{file[:-4]}.pdf")
+    #rank_folder = 'data/rank/results'
+    #for file in os.listdir(rank_folder):
+        #print(file)
+        #with open(os.path.join(rank_folder, file), "rb") as f:
+            #data = pickle.load(f)
+            #rank_plot(data, save=True, plot=False, save_file=f"plots/{file[:-4]}.pdf")

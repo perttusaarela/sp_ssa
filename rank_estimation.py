@@ -1,6 +1,6 @@
 import pickle
 import numpy as np
-from spatial import get_segments, partition_coordinates
+from spatio_temporal import get_segments, partition_spatiotemporal_coordinates
 from ssa import ssa_sir, ssa_save, ssa_lcor, sp_ssa_comb, SSAResultsObject
 
 
@@ -58,7 +58,7 @@ def estimate_rank(data, procedure, noise_dim, num_trials):
 
 
 def ssa_procedure(data, coords, sl, ssa_method=sp_ssa_comb, split=(3,3), kernel=('g', 1)):
-    part = partition_coordinates(coords, split[0], split[1], sl)
+    part = partition_spatiotemporal_coordinates(coords, split[0], split[1], sl)
     segs, seg_size = get_segments(part)
     if kernel is None:
         ssa_res = ssa_method(observations=data, segments=segs)
@@ -77,8 +77,8 @@ def ssa_procedure_from_segs(data, coords, segs, ssa_method=sp_ssa_comb, kernel=(
     return ssa_res.diagonalizer, ssa_res.diagonal
 
 
-def all_ssa_procedures(data, coords, sl, split=(3,3), kernel=('sb', 3.4)):
-    part = partition_coordinates(coords, split[0], split[1], sl)
+def all_ssa_procedures(data, coords, side_length, time_length, split=(3,3,3), kernel=('sb', 3.4)):
+    part = partition_spatiotemporal_coordinates(coords, split[0], split[1], split[2], side_length=side_length, time_length=time_length)
     segs = get_segments(part)
     res = sp_ssa_comb(data, coords, segs, kernel=kernel)
     res.sort_by_magnitude()
@@ -174,9 +174,14 @@ class RankStats:
             self.counts[method][rank] += 1
 
     def avg(self):
-        return {
-            m: (np.arange(len(c)) * c).sum() / c.sum() for m, c in self.counts.items()
-        }
+        out = {}
+        for m, c in self.counts.items():
+            total = c.sum()
+            if total == 0:
+                out[m] = np.nan
+            else:
+                out[m] = (np.arange(len(c)) * c).sum() / total
+        return out
 
     def most_common(self):
         return {

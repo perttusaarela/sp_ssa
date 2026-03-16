@@ -1,8 +1,8 @@
 import pickle
 import numpy as np
-from spatial_settings import (spatial_setting_1, spatial_setting_2, spatial_setting_3,
-                              spatial_setting_4, partition_coordinates)
-from spatial import get_segments
+from spatio_temporal_settings import (spatio_temporal_setting_1, spatio_temporal_setting_2, spatio_temporal_setting_3,
+                              spatio_temporal_setting_4, partition_spatiotemporal_coordinates)
+from spatio_temporal import get_segments
 from ssa import SSA, compare_as_projectors
 from functools import partial
 from timeit import default_timer as timer
@@ -10,7 +10,7 @@ from utils import generate_random_orthogonal_matrix, standardize_data
 from rank_estimation import RankStats, all_ssa_procedures, multi_estimate_rank
 
 METHODS = ["spsir", "spsave", "splcor", "spcomb", "random"]
-SPLITS  = [(2, 2), (3, 3), (4, 4)]
+SPLITS  = [(2, 2, 2), (3, 3, 3), (4, 4, 4)]
 
 def test_func(setup):
 
@@ -22,9 +22,13 @@ def test_func(setup):
     num_non_stationary = setup["num_non_stationary"]
     p = num_stationary + num_non_stationary
     num_tests = setup["num_tests"]
-    T = setup["T"]
+    #T = setup["T"]
     seed = setup["seed"]
-    side_length = int(np.sqrt(T))
+    #side_length = int(np.sqrt(T))
+    num_locations = setup["num_locations"]
+    num_times = setup["num_times"]
+    T = num_locations * num_times
+
     res_aux = {
         "spsir": {s: np.zeros((2, num_tests)) for s in splits},
         "spsave": {s: np.zeros((2, num_tests)) for s in splits},
@@ -39,7 +43,7 @@ def test_func(setup):
     start = timer()
     func = setup["setting"]
     for i in range(num_tests):
-        obs, coords = func(T, side_length, seed=seed)
+        obs, coords = func(num_locations, num_times, seed=seed)
         mixing_matrix = generate_random_orthogonal_matrix(p)  # rand. invertible p-by-p matrix
         unmixing_mat = mixing_matrix.T
         mixed_signals = mixing_matrix @ obs  # mix signals
@@ -48,7 +52,7 @@ def test_func(setup):
         r_mat = generate_random_orthogonal_matrix(p)  # random guess
 
         for split in splits:
-            partition = partition_coordinates(coords, split[0], split[1], side_length=side_length)
+            partition = partition_spatiotemporal_coordinates(coords, split[0], split[1], split[2], side_length=side_length, time_length=num_times)
             segments = get_segments(partition)
 
             ssa_obj = SSA(data=mixed_signals, num_non_stationary=num_non_stationary)
@@ -97,40 +101,52 @@ def subspace_simulation(setting: int):
         "num_stationary": 5,
         "num_non_stationary": 3,
         "num_tests": 200,
-        "T": 4900,
+        "num_locations": 250,
+        "num_times": 10,
+        "side_length": 50,        
+        "time_length": 10,
         "split" : None,
         "seed": None,
-        "setting": spatial_setting_4,
+        "setting": spatio_temporal_setting_4,
         "file": "data/final/setting4/data",
         "idx": 0
     }
     if setting == 1:
-        setup["setting"] = spatial_setting_1
+        setup["setting"] = spatio_temporal_setting_1
         setup["file"] = "data/subspace/setting1/data"
     elif setting == 2:
-        setup["setting"] = spatial_setting_2
+        setup["setting"] = spatio_temporal_setting_2
         setup["file"] = "data/subspace/setting2/data"
     elif setting == 3:
-        setup["setting"] = spatial_setting_3
+        setup["setting"] = spatio_temporal_setting_3
         setup["file"] = "data/subspace/setting3/data"
     elif setting == 4:
-        setup["setting"] = spatial_setting_4
+        setup["setting"] = spatio_temporal_setting_4
         setup["file"] = "data/subspace/setting4/data"
     else:
         print("invalid setting")
         exit()
 
     print("Starting full test for setting: ", setup["setting"])
-    T_arr = [x**2 for x in range(20, 80, 10)]
+    loc_arr = [100, 400, 900, 1600]
+    time_arr = [5, 10, 20]
     sim_start = timer()
     range_idx = 10
     for idx in range(range_idx):
         setup["idx"] = idx
         print("Starting tests for idx: ", idx)
         idx_start = timer()
-        for T in T_arr:
-            print(f"Starting {setup["num_tests"]} tests for num_points: {T}")
-            setup["T"] = T
+        for num_locations in loc_arr:
+            for num_times in time_arr:
+
+                setup["num_locations"] = num_locations
+                setup["num_times"] = num_times
+
+                print(
+                    f"Starting {setup['num_tests']} tests "
+                    f"for locations={num_locations}, times={num_times}"
+                )
+
             test_func(setup)
         print("Finished tests for idx: ", idx)
         print("Time spent: ", timer() - idx_start)
@@ -140,32 +156,33 @@ def subspace_simulation(setting: int):
 
     print("Combining sub-results to file: ", f"data/subspace/results/setting{setting}.pkl")
     total_tests = range_idx * setup["num_tests"]
+    sizes = [(l, t) for l in loc_arr for t in time_arr]
     full_data = {
         m: {
-            d: {
+            size: {
                 s: np.zeros((2, total_tests)) for s in SPLITS
-            } for d in T_arr
+            } for size in sizes
         } for m in METHODS
     }
     chunk = setup["num_tests"]
     path = f"data/subspace/setting{setting}"
-    for num_points in T_arr:
+    for (num_locations, num_times) in sizes:
         for idx in range(range_idx):
-            file = f"{path}/data_{num_points}_{idx}.pkl"
+            file = f"{path}/data_{num_locations}_{num_times}_{idx}.pkl"
             with open(file, "rb") as f:
                 data = pickle.load(f)
                 for m, data_by_split in data.items():
                     for split, data_array in data_by_split.items():
-                        full_data[m][num_points][split][:, idx * chunk: (idx + 1) * chunk] = data_array
+                        full_data[m][(num_locations, num_times)][split][:, idx * chunk: (idx + 1) * chunk] = data_array
 
     # final result will be the means of the full data set
     final_result = {
         m: {
-            d: {
-                s: full_data[m][d][s].mean(axis=1)
+            size: {
+                s: full_data[m][size][s].mean(axis=1)
                 for s in SPLITS
             }
-            for d in T_arr
+            for size in sizes
         }
         for m in METHODS
     }
@@ -178,33 +195,35 @@ def rank_simulation():
     """
     Produces the data for simulation 2
     """
-    sl = 60
-    num_points = sl ** 2
+    side_length = 60
+    num_locations = 250
+    num_times = 10
+
     num_tests = 1
     test_params = [
         {
             "num_tests": num_tests,
             "noise_dim": 1,
             "file": "data/rank/r1",
-            "func": spatial_setting_4
+            "func": spatio_temporal_setting_4
         },
         {
             "num_tests": num_tests,
             "noise_dim": 5,
             "file": "data/rank/r5",
-            "func": spatial_setting_4
+            "func": spatio_temporal_setting_4
         },
         {
             "num_tests": num_tests,
             "noise_dim": 10,
             "file": "data/rank/r10",
-            "func": spatial_setting_4
+            "func": spatio_temporal_setting_4
         },
         {
             "num_tests": num_tests,
             "noise_dim": 15,
             "file": "data/rank/r15",
-            "func": spatial_setting_4
+            "func": spatio_temporal_setting_4
         }
     ]
     num_iter = 1
@@ -220,13 +239,13 @@ def rank_simulation():
             print("idx: ", idx)
             print("noise_dim: ", noise_dim)
             for _ in range(params["num_tests"]):
-                data, coords = params["func"](num_points, sl)
+                data, coords = params["func"](num_locations=num_locations, num_times=num_times, side_length=side_length, time_length=num_times)
 
                 data = generate_random_orthogonal_matrix(8) @ data
 
                 data, _ = standardize_data(data)
 
-                func = partial(all_ssa_procedures, coords=coords, sl=sl, split=(4, 4), kernel=('sb', 3.4))
+                func = partial(all_ssa_procedures, coords=coords, side_length=side_length, time_length=num_times, split=(4, 4, 4), kernel=('sb', 3.4))
                 try:
                     res = multi_estimate_rank(data, func, noise_dim, 10, debug=False)
                     counts.update(res)

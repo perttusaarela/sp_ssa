@@ -1,7 +1,7 @@
 import numpy as np
-from spatial import (generate_coordinates, generate_spatial_data, partition_coordinates,
-                     ssa_matern_covariance, get_segments,
-                     params_to_block_vector)
+from spatio_temporal import (generate_spatiotemporal_coordinates, generate_spatiotemporal_data, 
+                             partition_spatiotemporal_coordinates,ssa_matern_covariance, get_segments,
+                             params_to_block_vector)
 
 NUM_STATIONARY = 5
 
@@ -15,11 +15,15 @@ def rotate_array(arr):
     return [arr[-1]] + arr[:-1]
 
 # Non-stationarity in mean
-def spatial_setting_1(num_points, side_length=1, seed=None, mean_params=MEANS, debug=False):
+def spatio_temporal_setting_1(num_locations, num_times, side_length=1, 
+                              time_length=1, seed=None, mean_params=MEANS, debug=False):
     if seed is not None:
         np.random.seed(seed)
-    coordinates = generate_coordinates(num_points, side_length)  # uniform coordinates on [0, side_length]^2
+    coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)  # uniform coordinates on [0, side_length]^2
+    num_points = num_locations * num_times
+
     cov_mat = ssa_matern_covariance(coordinates)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
     cholesky = np.linalg.cholesky(cov_mat)
     num_signals = NUM_STATIONARY + 3
     Z = np.random.randn(num_points, num_signals)  # all Gaussian vectors at once
@@ -30,7 +34,7 @@ def spatial_setting_1(num_points, side_length=1, seed=None, mean_params=MEANS, d
 
     for num_stripes in range(2, 5):
         param_idx = num_stripes - 2
-        partition = partition_coordinates(coordinates, num_stripes, num_stripes, side_length)
+        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, side_length, time_length)
         segs = get_segments(partition)
 
         mean_vector = params_to_block_vector(mean_params[param_idx] + rotate_array(mean_params[param_idx]), segs)
@@ -38,7 +42,12 @@ def spatial_setting_1(num_points, side_length=1, seed=None, mean_params=MEANS, d
 
     signals = np.vstack(signals)
     signals -= signals.mean(axis=1, keepdims=True)
-    signals /= signals.std(axis=1, keepdims=True)
+
+    std = signals.std(axis=1, keepdims=True)
+    std[std < 1e-10] = 1   # avoid division by zero
+
+    signals /= std
+
     if debug:
         print(np.mean(signals, axis=1))
         print(np.std(signals, axis=1))
@@ -52,11 +61,13 @@ VARS = [
     [0.4, 0.8, 1.5, 1.2]
 ]
 # non-stationarity in variance
-def spatial_setting_2(num_points, side_length=1, seed=None, var_params=VARS, debug=False):
+def spatio_temporal_setting_2(num_locations, num_times, side_length=1, time_length=1, seed=None, var_params=VARS, debug=False):
     if seed is not None:
         np.random.seed(seed)
-    coordinates = generate_coordinates(num_points, side_length)
+    coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)
+    num_points = num_locations * num_times
     cov_mat = ssa_matern_covariance(coordinates)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
     cholesky = np.linalg.cholesky(cov_mat)
     # Step 3: Preallocate signals array
     num_signals = NUM_STATIONARY + 3
@@ -67,7 +78,7 @@ def spatial_setting_2(num_points, side_length=1, seed=None, var_params=VARS, deb
 
     for num_stripes in range(2, 5):
         param_idx = num_stripes - 2
-        partition = partition_coordinates(coordinates, num_stripes, num_stripes, side_length)
+        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, side_length, time_length)
         segs = get_segments(partition)
 
         params = var_params[param_idx] + rotate_array(var_params[param_idx])
@@ -87,7 +98,11 @@ def spatial_setting_2(num_points, side_length=1, seed=None, var_params=VARS, deb
         print("Stds:", np.round(np.std(signals, axis=1), 6))
 
     signals -= signals.mean(axis=1, keepdims=True)
-    signals /= signals.std(axis=1, keepdims=True)
+
+    std = signals.std(axis=1, keepdims=True)
+    std[std < 1e-10] = 1   # avoid division by zero
+
+    signals /= std
 
     return signals, coordinates
 
@@ -100,15 +115,16 @@ CORRS = [
 
 
 # Non-stationarity in autocovariance
-def spatial_setting_3(num_points, side_length=1, seed=None, params_list=CORRS, debug=False):
+def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_length=1, seed=None, params_list=CORRS, debug=False):
     if seed is not None:
         np.random.seed(seed)
 
     # Step 1: Generate coordinates
-    coordinates = generate_coordinates(num_points, side_length)
-
+    coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)
+    num_points = num_locations * num_times
     # Step 2: Covariance and Cholesky for stationary signals
     cov_mat = ssa_matern_covariance(coordinates)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
     cholesky = np.linalg.cholesky(cov_mat)
 
     # Step 3: Preallocate signals array
@@ -121,7 +137,7 @@ def spatial_setting_3(num_points, side_length=1, seed=None, params_list=CORRS, d
     signals[:NUM_STATIONARY, :] = stationary_signals
 
     for num_stripes in range(2, 5):
-        partition = partition_coordinates(coordinates, num_stripes, num_stripes, side_length)
+        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, side_length, time_length)
         segs= get_segments(partition)
         ns_signal = np.empty(num_points)
         param_flag = False
@@ -133,14 +149,18 @@ def spatial_setting_3(num_points, side_length=1, seed=None, params_list=CORRS, d
             if param_flag:
                 nu, phi = params_list[num_stripes - 2][0][stripe_idx % num_stripes]
             else:
-                nu, phi = params_list[num_stripes - 2][0][stripe_idx % num_stripes]
+                nu, phi = params_list[num_stripes - 2][1][stripe_idx % num_stripes]
 
             cm =ssa_matern_covariance(coords_subset, nu=nu, phi=phi)
-            data = generate_spatial_data(cm)
+            cm += 1e-6 * np.eye(cm.shape[0])
+            data = generate_spatiotemporal_data(cm)
 
             # Center & normalize
             data -= data.mean()
-            data /= data.std()
+            std = data.std()
+
+            if std > 1e-10:
+                data /= std
             ns_signal[indices] = data
 
         signals[NUM_STATIONARY + (num_stripes - 2), :] = ns_signal
@@ -151,7 +171,11 @@ def spatial_setting_3(num_points, side_length=1, seed=None, params_list=CORRS, d
         print("Vars:", np.round(signals.var(axis=1), 6))
 
     signals -= signals.mean(axis=1, keepdims=True)
-    signals /= signals.std(axis=1, keepdims=True)
+
+    std = signals.std(axis=1, keepdims=True)
+    std[std < 1e-10] = 1   # avoid division by zero
+
+    signals /= std
 
     return signals, coordinates
 
@@ -167,15 +191,17 @@ PARAMS = [
     CORRS[CORR_IDX],
 ]
 
-def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, debug=False):
+def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_length=1, seed=None, params_list=PARAMS, debug=False):
     if seed is not None:
         np.random.seed(seed)
 
     # Step 1: Generate coordinates
-    coordinates = generate_coordinates(num_points, side_length)
+    coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)
+    num_points = num_locations * num_times
 
     # Step 2: Compute covariance and Cholesky
     cov_mat = ssa_matern_covariance(coordinates)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
     cholesky = np.linalg.cholesky(cov_mat)
 
     # Step 3: Preallocate signals array
@@ -188,7 +214,7 @@ def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, 
     signals[:NUM_STATIONARY + 2, :] = stationary_signals
 
     # Step 5: Mean signal (2 stripes)
-    partition = partition_coordinates(coordinates, 2 + MEAN_IDX, 2 + MEAN_IDX, side_length)
+    partition = partition_spatiotemporal_coordinates(coordinates, 2 + MEAN_IDX, 2 + MEAN_IDX, 2 + MEAN_IDX, side_length, time_length)
     segs= get_segments(partition)
 
     mean_params = params_list[0] + rotate_array(params_list[0])
@@ -196,10 +222,10 @@ def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, 
     signals[NUM_STATIONARY, :] += mean_vector
 
     # Step 6: Variance signal (3 stripes)
-    partition = partition_coordinates(coordinates, 2 + VAR_IDX, 1, side_length)
+    partition = partition_spatiotemporal_coordinates(coordinates, 2 + VAR_IDX, 1, 2 + VAR_IDX, side_length, time_length)
     segs= get_segments(partition)
 
-    var_params = params_list[1] + rotate_array(params_list[1])
+    var_params = params_list[1] 
     variance = params_to_block_vector(var_params, segs)
     std_vector = np.sqrt(variance)
     for seg in segs:
@@ -208,7 +234,7 @@ def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, 
 
 
     # Step 7: Autocov signal (4 stripes)
-    partition = partition_coordinates(coordinates, 2 + CORR_IDX, 2 + CORR_IDX, side_length)
+    partition = partition_spatiotemporal_coordinates(coordinates, 2 + CORR_IDX, 2 + CORR_IDX, 2 + CORR_IDX, side_length, time_length)
     segs = get_segments(partition)
 
     ns_signal = np.empty(num_points)
@@ -222,14 +248,18 @@ def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, 
         if param_flag:
             nu, phi = params_list[num_stripes - 2][0][stripe_idx % num_stripes]
         else:
-            nu, phi = params_list[num_stripes - 2][0][stripe_idx % num_stripes]
+            nu, phi = params_list[num_stripes - 2][1][stripe_idx % num_stripes]
 
         cm = ssa_matern_covariance(coords_subset, nu=nu, phi=phi)
-        data = generate_spatial_data(cm)
+        cm += 1e-6 * np.eye(cm.shape[0]) 
+        data = generate_spatiotemporal_data(cm)
 
         # Center & normalize
         data -= data.mean()
-        data /= data.std()
+        std = data.std()
+
+        if std > 1e-10:
+            data /= std
         ns_signal[indices] = data
 
     signals[-1] = ns_signal
@@ -240,20 +270,23 @@ def spatial_setting_4(num_points, side_length=1, seed=None, params_list=PARAMS, 
         print("Vars:", np.round(signals.var(axis=1), 6))
 
     signals -= signals.mean(axis=1, keepdims=True)
-    signals /= signals.std(axis=1, keepdims=True)
+
+    std = signals.std(axis=1, keepdims=True)
+    std[std < 1e-10] = 1   # avoid division by zero
+
+    signals /= std
 
     return signals, coordinates
 
 
 if __name__ == "__main__":
-    sigs, coords = spatial_setting_3(num_points=2500, side_length=50)
+    sigs, coords = spatio_temporal_setting_3(num_locations=250, num_times=10, side_length=50, time_length=10)
     print("global mean: ", sigs.mean(axis=1))
     print("global var: ", sigs.var(axis=1))
     for split in range(2, 5):
         print("split", split)
-        partition = partition_coordinates(coords, split, split, 50)
+        partition = partition_spatiotemporal_coordinates(coords, split, split, split, 50, 10)
         segs = get_segments(partition)
         for seg in segs:
             print("mean: ", sigs[:, seg].mean())
             print("var: ", sigs[:, seg].var())
-
