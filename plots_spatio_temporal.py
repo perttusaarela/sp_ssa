@@ -7,7 +7,6 @@ import seaborn as sns
 from spatio_temporal import generate_spatiotemporal_coordinates, generate_spatiotemporal_data, ssa_matern_covariance
 sns.set_palette("colorblind")  # This updates matplotlib too
 from sklearn.gaussian_process.kernels import Matern
-from spatio_temporal_settings import spatio_temporal_setting_1
 # plot settings
 mpl.rcParams.update({
     'font.family': 'serif',

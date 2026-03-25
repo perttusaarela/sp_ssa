@@ -109,27 +109,27 @@ def plot_spatial_mean_and_variance_over_time(signal, coords, save=False, filenam
 if __name__ == "__main__":
     print("starting simulation", flush=True)
 
-    # lighter than setting_4, but still YOUR spatio-temporal code
+   
     signals, coords = spatio_temporal_setting_1(
-        num_locations=40,
-        num_times=10,
+        num_locations=1000,
+        num_times=20,
         side_length=50,
-        time_length=10,
+        time_length=20,
         seed=123
     )
 
     print("simulation done", flush=True)
 
-    # choose one nonstationary signal
+  
     signal_idx = 5
     signal = signals[signal_idx]
 
     print("plotting maps", flush=True)
-    plot_maps_for_time_points(signal, coords, times_to_plot=[0, 5, 9], save=True)
+    plot_maps_for_time_points(signal, coords, times_to_plot=[0, 10, 15], save=True)
 
     print("plotting time series", flush=True)
     first_time_idx = np.where(coords[:, 2] == 0)[0]
-    chosen_locations = first_time_idx[[0, 10, 20, 30]]
+    chosen_locations = first_time_idx[[0, 300, 600, 900]]
     plot_time_series_for_locations(signal, coords, chosen_locations, save=True)
 
     print("plotting mean/variance", flush=True)

@@ -1,12 +1,13 @@
 import numpy as np
 from sklearn.gaussian_process.kernels import Matern
+from scipy.special import kv, gamma
 
 NUM_STATIONARY = 5
 
 
 def generate_spatiotemporal_coordinates(num_locations, num_times, hi=1):
     """
-    Generates uniformly random 2-D coordinates, and a time index attached
+    Generates uniformly random 2-D coordinates, and a time coordinates
     :param num_locations: Number of spatial locations
     :param num_times: Number of time points
     :param hi: bounds of the spatial domain. Sample ares from [0, hi] x [0, hi]
@@ -17,9 +18,9 @@ def generate_spatiotemporal_coordinates(num_locations, num_times, hi=1):
     
     coordinates = []
 
-    for i in range(num_locations):
+    for t in range(num_times):
 
-        for t in range(num_times):
+        for i in range(num_locations):
 
             coordinates.append([
                 spatial[i,0],
@@ -28,6 +29,13 @@ def generate_spatiotemporal_coordinates(num_locations, num_times, hi=1):
             ])
 
     return np.array(coordinates)
+
+def get_unique_spatial_locations(coordinates):
+    """
+    Get the unique spatial locations (x, y), by ignoring time.
+    """
+    spatial_coords = coordinates[:, :2]
+    return np.unique(spatial_coords, axis=0)
 
 
 def is_in_spatiotemporal_mask(points, corner, height, width, start_t, end_t):
@@ -66,16 +74,16 @@ def partition_spatiotemporal_coordinates(coordinates, num_x_segments, num_y_segm
         start_t = it* unif_time
         end_t = (it + 1)* unif_time
 
-    for iy in range(num_y_segments):
-        for ix in range(num_x_segments):
-            x0 = ix * unif_width
-            y0 = iy * unif_height
-            corner = [x0, y0]
+        for iy in range(num_y_segments):
+            for ix in range(num_x_segments):
+                x0 = ix * unif_width
+                y0 = iy * unif_height
+                corner = [x0, y0]
 
-            mask = is_in_spatiotemporal_mask(coordinates, corner, unif_height, unif_width, start_t, end_t)
-            indices = np.nonzero(mask)[0]
+                mask = is_in_spatiotemporal_mask(coordinates, corner, unif_height, unif_width, start_t, end_t)
+                indices = np.nonzero(mask)[0]
 
-            partition.append((corner, unif_height, unif_width, start_t,end_t, indices.tolist()))
+                partition.append((corner, unif_height, unif_width, start_t,end_t, indices.tolist()))
 
     return partition
 
@@ -100,31 +108,49 @@ def sort_by_partition(points, partition):
     return points[permutation, :], new_partition
 
 
-def matern_covariance(points, nu=1.5, phi=1.0, time_scale=1.0):
+def spatial_matern_covariance(spatial_points, nu=0.5, phi=1.0):
     """
-    Computes the covariance matrix of a set of points using sklearn Matern kernel. This differs from the usual Matern
-    Kernel by a constant
-    :param points: a list of spatio-temporal coordinates
-    :param nu: A parameter of Matern kernel
-    :param phi: A parameter of Matern kernel
-    :return: Matern covariance matrix
+    Spatial Matérn covariance:
+        C(h) = c_{nu,phi} (||h||/phi)^nu K_nu(||h||/phi)
+    :param spatial_points: a list of spatial coordinates
+    :param nu: A parameter of Matern kernel (smoothness)
+    :param phi: A parameter of Matern kernel (scale)
+    :return: Matern covariance matrix for spatial data
     """
-    pts = np.asarray(points, dtype=float).copy()
-    pts[:, 2] = pts[:, 2] / time_scale
-    matern = Matern(length_scale=phi, nu=nu)
-    return matern(pts)
+    spatial_points = np.asarray(spatial_points, dtype=float)
+    diff = spatial_points[:, None, :] - spatial_points[None, :, :]
+    dists = np.sqrt(np.sum(diff**2, axis=2))
 
+    r = dists / phi
+    cov = np.zeros_like(r, dtype=float)
 
-def ssa_matern_covariance(points, nu=0.5, phi=1.0, sigma=1.0):
+    # for r > 0
+    mask = r > 0
+    const = 1.0 / (2.0**(nu - 1.0) * gamma(nu))
+    cov[mask] = const * (r[mask] ** nu) * kv(nu, r[mask])
+
+    # define the limit at zero as 1
+    cov[~mask] = 1.0
+    return cov
+
+def temporal_exponential_covariance(num_times, theta=1.0):
     """
-    Computes the usual Matern covariance matrix of a set of points using sklearn Matern kernel.
-    :param points: a list of coordinates
-    :param nu: A parameter of Matern kernel
-    :param phi: Spatial scale parameter
-    :param sigma: variance
-    :return: Matern covariance matrix
+    Temporal exponential covariance:
+        C(t1, t2) = exp( -|t2 - t1| / theta )
     """
-    return sigma * matern_covariance(points, nu=nu, phi=phi * np.sqrt(2 * nu))
+    times = np.arange(num_times)
+    diff = np.abs(times[:, None] - times[None, :])
+    return np.exp(-diff / theta)
+
+def full_spatiotemporal_covariance(spatial_points, num_times, nu=0.5, phi=1.0, theta=1.0):
+    """
+    Final covariance:
+        full_cov_ST = Cov_T kron Cov_S
+    """
+    spatial_cov = spatial_matern_covariance(spatial_points, nu=nu, phi=phi)
+    temporal_cov = temporal_exponential_covariance(num_times, theta=theta)
+    full_cov = np.kron(temporal_cov, spatial_cov)
+    return full_cov, spatial_cov, temporal_cov
 
 
 def spatial_data_from_cholesky(cholesky):
@@ -154,10 +180,10 @@ def generate_spatiotemporal_data(covariance_matrix, mean=None, jitter=1e-6):
     cov = 0.5 * (cov + cov.T)  # enforce symmetry
     cov = cov + jitter * np.eye(cov.shape[0])
 
-    cholesky = np.linalg.cholesky(covariance_matrix)  # compute the cholseky decomp. of Cov
-    spatial_data = spatial_data_from_cholesky(cholesky) + mean
-
-    return spatial_data
+    cholesky = np.linalg.cholesky(cov)  # compute the cholseky decomp. of Cov
+    n = cov.shape[0]
+    z = np.random.randn(n)
+    return cholesky @ z + mean
 
 
 def get_segments(partition):

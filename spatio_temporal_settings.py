@@ -1,9 +1,9 @@
 import numpy as np
-from spatio_temporal import (generate_spatiotemporal_coordinates, generate_spatiotemporal_data, 
-                             partition_spatiotemporal_coordinates,ssa_matern_covariance, get_segments,
-                             params_to_block_vector)
+from spatio_temporal import (generate_spatiotemporal_coordinates, get_unique_spatial_locations, generate_spatiotemporal_data, 
+                             partition_spatiotemporal_coordinates, full_spatiotemporal_covariance,  spatial_matern_covariance, 
+                             temporal_exponential_covariance, get_segments, params_to_block_vector)
 
-NUM_STATIONARY = 5
+NUM_STATIONARY = 3
 
 MEANS = [
     [1.5, -1.5],
@@ -14,6 +14,11 @@ MEANS = [
 def rotate_array(arr):
     return [arr[-1]] + arr[:-1]
 
+
+# To fix that the number of space-time blocks may be larger than the number of parameters prepared
+def repeat_to_length(arr, target_len):
+            reps = (target_len + len(arr) - 1) // len(arr)
+            return (arr * reps)[:target_len]
 # Non-stationarity in mean
 def spatio_temporal_setting_1(num_locations, num_times, side_length=1, 
                               time_length=1, seed=None, mean_params=MEANS, debug=False):
@@ -22,10 +27,12 @@ def spatio_temporal_setting_1(num_locations, num_times, side_length=1,
     coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)  # uniform coordinates on [0, side_length]^2
     num_points = num_locations * num_times
 
-    cov_mat = ssa_matern_covariance(coordinates)
-    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
+    spatial_points = get_unique_spatial_locations(coordinates)
+    cov_mat, spatial_cov, temporal_cov = full_spatiotemporal_covariance(spatial_points, num_times, nu=0.5, phi=10.0, theta=0.5)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0])
     cholesky = np.linalg.cholesky(cov_mat)
-    num_signals = NUM_STATIONARY + 3
+
+    num_signals = NUM_STATIONARY + 2
     Z = np.random.randn(num_points, num_signals)  # all Gaussian vectors at once
     signals = (cholesky @ Z).T
 
@@ -34,11 +41,16 @@ def spatio_temporal_setting_1(num_locations, num_times, side_length=1,
 
     for num_stripes in range(2, 5):
         param_idx = num_stripes - 2
-        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, side_length, time_length)
+        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, 1, side_length, time_length)
         segs = get_segments(partition)
+        segs = [seg for seg in segs if len(seg) > 0]
 
-        mean_vector = params_to_block_vector(mean_params[param_idx] + rotate_array(mean_params[param_idx]), segs)
+        base_params = mean_params[param_idx] + rotate_array(mean_params[param_idx])
+        block_params = repeat_to_length(base_params, len(segs))
+
+        mean_vector = params_to_block_vector(block_params, segs)
         signals[NUM_STATIONARY + param_idx] += mean_vector
+
 
     signals = np.vstack(signals)
     signals -= signals.mean(axis=1, keepdims=True)
@@ -66,8 +78,10 @@ def spatio_temporal_setting_2(num_locations, num_times, side_length=1, time_leng
         np.random.seed(seed)
     coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)
     num_points = num_locations * num_times
-    cov_mat = ssa_matern_covariance(coordinates)
-    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
+    spatial_points = get_unique_spatial_locations(coordinates)
+
+    cov_mat, spatial_cov, temporal_cov = full_spatiotemporal_covariance( spatial_points, num_times, nu=0.5, phi=10.0, theta=0.5)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0])
     cholesky = np.linalg.cholesky(cov_mat)
     # Step 3: Preallocate signals array
     num_signals = NUM_STATIONARY + 3
@@ -115,7 +129,7 @@ CORRS = [
 
 
 # Non-stationarity in autocovariance
-def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_length=1, seed=None, params_list=CORRS, debug=False):
+def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_length=1, seed=None, params_list=CORRS, temporal_theta=0.5, debug=False):
     if seed is not None:
         np.random.seed(seed)
 
@@ -123,8 +137,9 @@ def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_leng
     coordinates = generate_spatiotemporal_coordinates(num_locations, num_times, side_length)
     num_points = num_locations * num_times
     # Step 2: Covariance and Cholesky for stationary signals
-    cov_mat = ssa_matern_covariance(coordinates)
-    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
+    spatial_points = get_unique_spatial_locations(coordinates)
+    cov_mat, spatial_cov, temporal_cov = full_spatiotemporal_covariance(spatial_points, num_times, nu=0.5, phi=10.0, theta=temporal_theta)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0])
     cholesky = np.linalg.cholesky(cov_mat)
 
     # Step 3: Preallocate signals array
@@ -137,8 +152,9 @@ def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_leng
     signals[:NUM_STATIONARY, :] = stationary_signals
 
     for num_stripes in range(2, 5):
-        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, side_length, time_length)
+        partition = partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, num_stripes, side_length, time_length)
         segs= get_segments(partition)
+        segs = [seg for seg in segs if len(seg) > 0]
         ns_signal = np.empty(num_points)
         param_flag = False
         for stripe_idx, indices in enumerate(segs):
@@ -151,8 +167,33 @@ def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_leng
             else:
                 nu, phi = params_list[num_stripes - 2][1][stripe_idx % num_stripes]
 
-            cm =ssa_matern_covariance(coords_subset, nu=nu, phi=phi)
+            # build separable covariance for the subsets
+            coords_subset = np.asarray(coords_subset, dtype=float)
+
+            unique_spatial = np.unique(coords_subset[:, :2], axis=0)
+            unique_times = np.unique(coords_subset[:, 2])
+
+            spatial_cov_block = spatial_matern_covariance(unique_spatial, nu=nu, phi=phi)
+            temporal_cov_block = temporal_exponential_covariance(unique_times, theta=temporal_theta)
+
+            full_cov_block = np.kron(temporal_cov_block, spatial_cov_block)
+
+            spatial_index = {tuple(pt): i for i, pt in enumerate(unique_spatial)}
+            time_index = {t: i for i, t in enumerate(unique_times)}
+
+            canonical_indices = []
+            num_spatial = len(unique_spatial)
+
+            for row in coords_subset:
+                s_idx = spatial_index[(row[0], row[1])]
+                t_idx = time_index[row[2]]
+                canonical_indices.append(t_idx * num_spatial + s_idx)
+
+            canonical_indices = np.array(canonical_indices, dtype=int)
+
+            cm =full_cov_block[np.ix_(canonical_indices, canonical_indices)]
             cm += 1e-6 * np.eye(cm.shape[0])
+
             data = generate_spatiotemporal_data(cm)
 
             # Center & normalize
@@ -191,7 +232,7 @@ PARAMS = [
     CORRS[CORR_IDX],
 ]
 
-def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_length=1, seed=None, params_list=PARAMS, debug=False):
+def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_length=1, seed=None, params_list=PARAMS, temporal_theta=0.5, debug=False):
     if seed is not None:
         np.random.seed(seed)
 
@@ -200,8 +241,9 @@ def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_leng
     num_points = num_locations * num_times
 
     # Step 2: Compute covariance and Cholesky
-    cov_mat = ssa_matern_covariance(coordinates)
-    cov_mat += 1e-6 * np.eye(cov_mat.shape[0]) # add small value for numerical stability
+    spatial_points = get_unique_spatial_locations(coordinates)
+    cov_mat, spatial_cov, temporal_cov = full_spatiotemporal_covariance(spatial_points, num_times, nu=0.5, phi=10.0, theta=temporal_theta)
+    cov_mat += 1e-6 * np.eye(cov_mat.shape[0])
     cholesky = np.linalg.cholesky(cov_mat)
 
     # Step 3: Preallocate signals array
@@ -216,41 +258,66 @@ def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_leng
     # Step 5: Mean signal (2 stripes)
     partition = partition_spatiotemporal_coordinates(coordinates, 2 + MEAN_IDX, 2 + MEAN_IDX, 2 + MEAN_IDX, side_length, time_length)
     segs= get_segments(partition)
-
+    segs = [seg for seg in segs if len(seg) > 0]
     mean_params = params_list[0] + rotate_array(params_list[0])
+    mean_params = repeat_to_length(mean_params, len(segs))
     mean_vector = params_to_block_vector(mean_params, segs)
     signals[NUM_STATIONARY, :] += mean_vector
 
     # Step 6: Variance signal (3 stripes)
     partition = partition_spatiotemporal_coordinates(coordinates, 2 + VAR_IDX, 1, 2 + VAR_IDX, side_length, time_length)
     segs= get_segments(partition)
-
-    var_params = params_list[1] 
+    segs = [seg for seg in segs if len(seg) > 0]
+    var_params = repeat_to_length(params_list[1], len(segs)) 
     variance = params_to_block_vector(var_params, segs)
     std_vector = np.sqrt(variance)
     for seg in segs:
-        signals[NUM_STATIONARY + 1, seg] /= signals[NUM_STATIONARY + 1, seg].std()
+        seg_std = signals[NUM_STATIONARY + 1, seg].std()
+        if seg_std > 1e-10:
+            signals[NUM_STATIONARY + 1, seg] /= seg_std
     signals[NUM_STATIONARY + 1, :] *= std_vector
 
 
     # Step 7: Autocov signal (4 stripes)
     partition = partition_spatiotemporal_coordinates(coordinates, 2 + CORR_IDX, 2 + CORR_IDX, 2 + CORR_IDX, side_length, time_length)
     segs = get_segments(partition)
-
+    segs = [seg for seg in segs if len(seg) > 0]
     ns_signal = np.empty(num_points)
     num_stripes = 2 + CORR_IDX
     param_flag = False
+    corr_params = params_list[2]
     for stripe_idx, indices in enumerate(segs):
         coords_subset = coordinates[indices]
         if stripe_idx % num_stripes == 0:
             param_flag = not param_flag
 
         if param_flag:
-            nu, phi = params_list[num_stripes - 2][0][stripe_idx % num_stripes]
+            nu, phi = corr_params[0][stripe_idx % num_stripes]
         else:
-            nu, phi = params_list[num_stripes - 2][1][stripe_idx % num_stripes]
+            nu, phi = corr_params[1][stripe_idx % num_stripes]
+        
+        coords_subset = np.asarray(coords_subset, dtype=float)
+        unique_spatial = np.unique(coords_subset[:, :2], axis=0)
+        unique_times = np.unique(coords_subset[:, 2])
 
-        cm = ssa_matern_covariance(coords_subset, nu=nu, phi=phi)
+        spatial_cov_block = spatial_matern_covariance(unique_spatial, nu=nu, phi=phi)
+        temporal_cov_block = temporal_exponential_covariance(unique_times, theta=temporal_theta)
+        full_cov_block = np.kron(temporal_cov_block, spatial_cov_block)
+
+        spatial_index = {tuple(pt): i for i, pt in enumerate(unique_spatial)}
+        time_index = {t: i for i, t in enumerate(unique_times)}
+
+        canonical_indices = []
+        num_spatial = len(unique_spatial)
+
+        for row in coords_subset:
+            s_idx = spatial_index[(row[0], row[1])]
+            t_idx = time_index[row[2]]
+            canonical_indices.append(t_idx * num_spatial + s_idx)
+
+        canonical_indices = np.array(canonical_indices, dtype=int)
+
+        cm = full_cov_block[np.ix_(canonical_indices, canonical_indices)]
         cm += 1e-6 * np.eye(cm.shape[0]) 
         data = generate_spatiotemporal_data(cm)
 
@@ -262,7 +329,7 @@ def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_leng
             data /= std
         ns_signal[indices] = data
 
-    signals[-1] = ns_signal
+    signals[-1, :] = ns_signal
 
     # Optional debug
     if debug:
