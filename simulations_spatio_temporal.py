@@ -3,7 +3,7 @@ import numpy as np
 from spatio_temporal_settings import (spatio_temporal_setting_1, spatio_temporal_setting_2, spatio_temporal_setting_3,
                               spatio_temporal_setting_4, partition_spatiotemporal_coordinates)
 from spatio_temporal import get_segments
-from ssa import SSA, compare_as_projectors
+from st_ssa import STSSA, compare_as_projectors
 from functools import partial
 from timeit import default_timer as timer
 from utils import generate_random_orthogonal_matrix, standardize_data
@@ -55,23 +55,23 @@ def test_func(setup):
             partition = partition_spatiotemporal_coordinates(coords, split[0], split[1], split[2], side_length=side_length, time_length=num_times)
             segments = get_segments(partition)
 
-            ssa_obj = SSA(data=mixed_signals, num_non_stationary=num_non_stationary)
+            ssa_obj = STSSA(data=mixed_signals, num_non_stationary=num_non_stationary)
 
-            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("sb", 3.4))
+            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 2.2))
             ss_base = r_mat[:, :num_stationary].T @ ssa_obj.whitener  # baseline guess for ss
             ns_base = r_mat[:, num_stationary:].T @ ssa_obj.whitener  # baseline guess for ns
 
             if num_stationary > 0:
                 res_rand = compare_as_projectors(proj1.T, ss_base.T)  # result of random guess
                 res = np.array(compare_as_projectors(proj1.T, ss_mat.T))  # result of algorithm
-                results["spcomb"][split][0, i] = res
+                results["stcomb"][split][0, i] = res
                 results["random"][split][0, i] = res_rand
 
             if num_non_stationary > 0:
                 res = np.array(compare_as_projectors(proj2.T, ns_mat.T))
                 res_rand = compare_as_projectors(proj2.T, ns_base.T)
 
-                results["spcomb"][split][1, i] = res
+                results["stcomb"][split][1, i] = res
                 results["random"][split][1, i] = res_rand
 
             if ssa_obj.aux is not None:
@@ -99,7 +99,7 @@ def subspace_simulation(setting: int):
     """
     setup = {
         "num_stationary": 5,
-        "num_non_stationary": 3,
+        "num_non_stationary": 2,
         "num_tests": 200,
         "num_locations": 250,
         "num_times": 10,
@@ -241,7 +241,7 @@ def rank_simulation():
             for _ in range(params["num_tests"]):
                 data, coords = params["func"](num_locations=num_locations, num_times=num_times, side_length=side_length, time_length=num_times)
 
-                data = generate_random_orthogonal_matrix(8) @ data
+                data = generate_random_orthogonal_matrix(5) @ data
 
                 data, _ = standardize_data(data)
 
