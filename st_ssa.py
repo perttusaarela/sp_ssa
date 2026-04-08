@@ -54,7 +54,7 @@ class STSSA:
         return ss, ns
     
     
-class SSAResultsObject:
+class STSSAResultsObject:
     def __init__(self, m_mat=None, diagonalizer=None, diagonal=None):
         self.m_mat = m_mat
         self.diagonalizer = diagonalizer
@@ -93,7 +93,7 @@ def stssa_sir(observations, segments):
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
 
-    return SSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
+    return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
 def stssa_save(observations, segments):
@@ -112,7 +112,7 @@ def stssa_save(observations, segments):
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
 
-    return SSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
+    return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
 def st_ball_kernel_local_sample_covariance(data, coords, radius, segment=None, seg_mean=None):
@@ -145,7 +145,7 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, segment=None, s
     return l_cov
 
 
-def stssa_lcor(observations, coords, segments, kernel=("b", 2.2)):
+def stssa_lcor(observations, coords, segments, kernel=("b", 0.3)):
     full_range = observations.shape[1]
     m_mat = np.zeros((observations.shape[0], observations.shape[0]))
 
@@ -160,7 +160,7 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.2)):
             radius=kernel[1]
         )
     else:
-        raise ValueError("For the first version, use kernel ('b', 2.2)")
+        raise ValueError("For the first version, use kernel ('b', 0.3)")
 
     for segment in segments:
         if len(segment) == 0:
@@ -175,10 +175,10 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.2)):
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
 
-    return SSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
+    return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
-def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
+def stssa_comb(observations, coords, segments, kernel=("b", 0.3), debug=False):
     M1 = stssa_sir(observations, segments)
     M2 = stssa_save(observations, segments)
     M3 = stssa_lcor(observations, coords, segments, kernel=kernel)
@@ -193,7 +193,7 @@ def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
 
     X = np.concatenate(matrices, axis=0)
 
-    result = SSAResultsObject(m_mat=None, diagonalizer=None, diagonal=None)
+    result = STSSAResultsObject(m_mat=None, diagonalizer=None, diagonal=None)
     result.aux["stsir"] = objs[0]
     result.aux["stsave"] = objs[1]
     result.aux["stlcor"] = objs[2]
