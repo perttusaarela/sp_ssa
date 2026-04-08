@@ -9,7 +9,7 @@ from timeit import default_timer as timer
 from utils import generate_random_orthogonal_matrix, standardize_data
 from rank_estimation import RankStats, all_ssa_procedures, multi_estimate_rank
 
-METHODS = ["spsir", "spsave", "splcor", "spcomb", "random"]
+METHODS = ["stsir", "stsave", "stlcor", "stcomb", "random"]
 SPLITS  = [(2, 2, 2), (3, 3, 3), (4, 4, 4)]
 
 def test_func(setup):
@@ -30,10 +30,10 @@ def test_func(setup):
     T = num_locations * num_times
 
     res_aux = {
-        "spsir": {s: np.zeros((2, num_tests)) for s in splits},
-        "spsave": {s: np.zeros((2, num_tests)) for s in splits},
-        "splcor": {s: np.zeros((2, num_tests)) for s in splits},
-        "spcomb": {s: np.zeros((2, num_tests)) for s in splits},
+        "stsir": {s: np.zeros((2, num_tests)) for s in splits},
+        "stsave": {s: np.zeros((2, num_tests)) for s in splits},
+        "stlcor": {s: np.zeros((2, num_tests)) for s in splits},
+        "stcomb": {s: np.zeros((2, num_tests)) for s in splits},
         "random": {s: np.zeros((2, num_tests)) for s in splits},
     }
     results = {
@@ -57,7 +57,7 @@ def test_func(setup):
 
             ssa_obj = STSSA(data=mixed_signals, num_non_stationary=num_non_stationary)
 
-            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 2.2))
+            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 0.3))
             ss_base = r_mat[:, :num_stationary].T @ ssa_obj.whitener  # baseline guess for ss
             ns_base = r_mat[:, num_stationary:].T @ ssa_obj.whitener  # baseline guess for ns
 

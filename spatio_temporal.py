@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.gaussian_process.kernels import Matern
 from scipy.special import kv, gamma
 
-NUM_STATIONARY = 5
+NUM_STATIONARY = 3
 
 
 def generate_spatiotemporal_coordinates(num_locations, num_times, hi=1):
