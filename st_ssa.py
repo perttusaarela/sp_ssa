@@ -3,6 +3,7 @@ from pyssaBSS import joint_diagonalization
 from functools import partial
 
 from utils import sample_mean, sample_covariance, standardize_data
+from spatio_temporal import get_unique_spatial_locations
 
 
 def to_projector(mat):
@@ -115,7 +116,7 @@ def stssa_save(observations, segments):
     return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
-def st_ball_kernel_local_sample_covariance(data, coords, radius, segment=None, seg_mean=None):
+def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=None, seg_mean=None, scale=True):
     """
     Local covariance in spatio-temporal coordinates (x, y, t)
     using a ball kernel.
@@ -127,14 +128,9 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, segment=None, s
     X = data[:, segment]
     C = coords[segment]
     N = X.shape[1]
+    p = X.shape[0]
 
-    if seg_mean is None:
-        seg_mean = np.mean(X, axis=1, keepdims=True)
-    else:
-        seg_mean = seg_mean[:, np.newaxis]
-
-    X_centered = X - seg_mean
-
+    """
     diffs = C[:, np.newaxis, :] - C[np.newaxis, :, :]
     sq_dists = np.sum(diffs ** 2, axis=2)
 
@@ -142,25 +138,57 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, segment=None, s
     np.fill_diagonal(mask, 0.0)
 
     l_cov = (X_centered @ mask @ X_centered.T) / N
+    """
+    if seg_mean is None:
+        seg_mean = np.mean(X, axis=1, keepdims=True)
+    else:
+        seg_mean = seg_mean[:, np.newaxis]
+
+    X_centered = X - seg_mean
+
+    C_loc = get_unique_spatial_locations(C)
+    num_locations = len(C_loc)
+    l_cov = np.zeros((p, p))
+    for i, coord1 in enumerate(C_loc):
+        temp = np.zeros((p, p))
+        counter = 0
+        for j, coord2 in enumerate(C_loc):
+            if i == j:
+                continue
+            if np.linalg.norm(coord1[0:1] - coord2[0:1]) <= radius:
+                X_i = X_centered[:, i::num_locations]
+                X_j = X_centered[:, j::num_locations]
+                #temp += np.outer(X_centered[:, i], X_centered[:, j])
+                temp += X_i[:, :-lag] @ X_j[:, lag:].T
+                counter += 1
+
+        if scale and counter > 0:
+            temp /= counter
+
+        l_cov += temp
+
+    l_cov /= N
+
     return l_cov
 
 
-def stssa_lcor(observations, coords, segments, kernel=("b", 0.3)):
+def stssa_lcor(observations, coords, segments, kernel=("b", 2.3), lag=1):
     full_range = observations.shape[1]
     m_mat = np.zeros((observations.shape[0], observations.shape[0]))
 
     if kernel[0] == "b":
         full_auto_cov = st_ball_kernel_local_sample_covariance(
-            observations, coords, radius=kernel[1]
+            observations, coords, radius=kernel[1], lag=lag
         )
         func = partial(
             st_ball_kernel_local_sample_covariance,
             data=observations,
             coords=coords,
-            radius=kernel[1]
+            radius=kernel[1],
+            lag=lag
         )
     else:
-        raise ValueError("For the first version, use kernel ('b', 0.3)")
+        raise ValueError("For the first version, use kernel ('b', 2.3)")
 
     for segment in segments:
         if len(segment) == 0:
@@ -178,7 +206,7 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 0.3)):
     return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
-def stssa_comb(observations, coords, segments, kernel=("b", 0.3), debug=False):
+def stssa_comb(observations, coords, segments, kernel=("b", 2.3), debug=False):
     M1 = stssa_sir(observations, segments)
     M2 = stssa_save(observations, segments)
     M3 = stssa_lcor(observations, coords, segments, kernel=kernel)
@@ -198,7 +226,7 @@ def stssa_comb(observations, coords, segments, kernel=("b", 0.3), debug=False):
     result.aux["stsave"] = objs[1]
     result.aux["stlcor"] = objs[2]
 
-    V, D, it = joint_diagonalization(X)
+    V, D, it = joint_diagonalization(X, maxiter=3000, eps=1e-4)
 
     abs_D = np.abs(D)
     diagonal_of_sum_matrix = np.diagonal(sum(abs_D))

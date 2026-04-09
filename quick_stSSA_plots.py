@@ -113,7 +113,7 @@ if __name__ == "__main__":
     signals, coords = spatio_temporal_setting_1(
         num_locations=1000,
         num_times=20,
-        side_length=50,
+        side_length=6,
         time_length=20,
         seed=123
     )

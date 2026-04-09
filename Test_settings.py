@@ -8,21 +8,23 @@ from spatio_temporal_settings import (
 )
 
 from spatio_temporal import partition_spatiotemporal_coordinates, get_segments
-from st_ssa import ST_SSA
+from st_ssa import STSSA
 
 
 def get_test_partition(coords, setting_Type):
+    num_locations=coords.shape[0]
+    side_length = int(np.sqrt(num_locations))
     if setting_Type == "space":
         return partition_spatiotemporal_coordinates(
-            coords, 2, 2, 1, side_length=1, time_length=20
+            coords, 2, 2, 1, side_length=side_length, time_length=20
         )
     elif setting_Type == "time":
         return partition_spatiotemporal_coordinates(
-            coords, 1, 1, 2, side_length=1, time_length=20
+            coords, 1, 1, 2, side_length=side_length, time_length=20
         )
     else:
         return partition_spatiotemporal_coordinates(
-            coords, 2, 2, 2, side_length=1, time_length=20
+            coords, 2, 2, 2, side_length=side_length, time_length=20
         )
 
 
@@ -59,7 +61,7 @@ def test_one_setting(setting_func, setting_name, setting_Type):
     signals, coords = setting_func(
         num_locations=100,
         num_times=20,
-        side_length=1,
+        side_length=10,
         time_length=20,
         seed=123,
         Type=setting_Type,
@@ -107,7 +109,7 @@ def test_one_setting(setting_func, setting_name, setting_Type):
 
     
     # SSA method checks
-    obj = ST_SSA(signals, num_non_stationary=2)
+    obj = STSSA(signals, num_non_stationary=2)
 
     ss_sir, ns_sir = obj.sir(nonempty_segments)
     print("SIR stationary shape:", ss_sir.shape)

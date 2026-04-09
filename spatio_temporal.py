@@ -138,7 +138,10 @@ def temporal_exponential_covariance(num_times, theta=1.0):
     Temporal exponential covariance:
         C(t1, t2) = exp( -|t2 - t1| / theta )
     """
-    times = np.arange(num_times)
+    if isinstance(num_times, int):
+        times = np.arange(num_times)
+    else:
+        times = num_times
     diff = np.abs(times[:, None] - times[None, :])
     return np.exp(-diff / theta)
 

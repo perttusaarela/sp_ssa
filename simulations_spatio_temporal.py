@@ -24,26 +24,22 @@ def test_func(setup):
     num_tests = setup["num_tests"]
     #T = setup["T"]
     seed = setup["seed"]
-    #side_length = int(np.sqrt(T))
+    #
     num_locations = setup["num_locations"]
     num_times = setup["num_times"]
     T = num_locations * num_times
+    side_length = int(np.sqrt(num_locations))
 
-    res_aux = {
-        "stsir": {s: np.zeros((2, num_tests)) for s in splits},
-        "stsave": {s: np.zeros((2, num_tests)) for s in splits},
-        "stlcor": {s: np.zeros((2, num_tests)) for s in splits},
-        "stcomb": {s: np.zeros((2, num_tests)) for s in splits},
-        "random": {s: np.zeros((2, num_tests)) for s in splits},
-    }
     results = {
         method: {s: np.zeros((2, num_tests)) for s in splits}
         for method in METHODS
     }
     start = timer()
     func = setup["setting"]
+    type = "space"
     for i in range(num_tests):
-        obs, coords = func(num_locations, num_times, seed=seed)
+        obs, coords = func(num_locations=num_locations, num_times=num_times, seed=seed, Type=type,
+                           side_length=side_length, time_length=num_times)
         mixing_matrix = generate_random_orthogonal_matrix(p)  # rand. invertible p-by-p matrix
         unmixing_mat = mixing_matrix.T
         mixed_signals = mixing_matrix @ obs  # mix signals
@@ -57,7 +53,7 @@ def test_func(setup):
 
             ssa_obj = STSSA(data=mixed_signals, num_non_stationary=num_non_stationary)
 
-            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 0.3))
+            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 2.3))
             ss_base = r_mat[:, :num_stationary].T @ ssa_obj.whitener  # baseline guess for ss
             ns_base = r_mat[:, num_stationary:].T @ ssa_obj.whitener  # baseline guess for ns
 
@@ -98,7 +94,7 @@ def subspace_simulation(setting: int):
     produces the data for Simulation 1
     """
     setup = {
-        "num_stationary": 5,
+        "num_stationary": 3,
         "num_non_stationary": 2,
         "num_tests": 200,
         "num_locations": 250,
@@ -299,12 +295,7 @@ def main():
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "-r",
-        "--rank",
-        action="store_true",
-        help="Run the rank estimation simulation."
-    )
+
     group.add_argument(
         "-s",
         "--subspace",
@@ -315,9 +306,7 @@ def main():
 
     args = parser.parse_args()
 
-    if args.rank:
-        rank_simulation()
-    elif args.subspace is not None:
+    if args.subspace is not None:
         subspace_simulation(args.subspace)
 
 
