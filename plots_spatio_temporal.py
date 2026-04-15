@@ -4,9 +4,11 @@ import matplotlib as mpl
 import os
 import pickle
 import seaborn as sns
-from spatio_temporal import generate_spatiotemporal_coordinates, generate_spatiotemporal_data, ssa_matern_covariance
+from matplotlib.patches import Rectangle
+from spatio_temporal import (generate_spatiotemporal_coordinates, generate_spatiotemporal_data, get_unique_spatial_locations,
+                            full_spatiotemporal_covariance,)
 sns.set_palette("colorblind")  # This updates matplotlib too
-from sklearn.gaussian_process.kernels import Matern
+#from sklearn.gaussian_process.kernels import Matern
 # plot settings
 mpl.rcParams.update({
     'font.family': 'serif',
@@ -16,8 +18,8 @@ mpl.rcParams.update({
     'legend.fontsize': 9,
     'xtick.labelsize': 9,
     'ytick.labelsize': 9,
-    'figure.dpi': 800,
-    'savefig.dpi': 800,
+    'figure.dpi': 300,
+    'savefig.dpi': 300,
     'text.usetex': False,
     'lines.linewidth': 1.2,
     'lines.markersize': 4,
@@ -28,36 +30,29 @@ mpl.rcParams.update({
     'grid.alpha': 0.7
 })
 
-def generate_coordinates(n, hi=1):
-    return hi * np.random.rand(n, 2)
-
-def spatial_matern_covariance(points, nu=0.5, phi=1.0, sigma=1.0):
-    matern = Matern(length_scale=phi * np.sqrt(2 * nu), nu=nu)
-    return sigma * matern(points)
-
-def generate_spatial_data(covariance_matrix, mean=None, jitter=1e-6):
-    if mean is None:
-        mean = np.zeros(covariance_matrix.shape[0])
-
-    cov = np.asarray(covariance_matrix, dtype=float)
-    cov = 0.5 * (cov + cov.T)
-    cov = cov + jitter * np.eye(cov.shape[0])
-
-    cholesky = np.linalg.cholesky(cov)
-    z = np.random.randn(cov.shape[0])
-    return cholesky @ z + mean
-
 SPLITS = [(2, 2, 2), (3, 3, 3), (4, 4, 4)]
 NOISE_DIMS = [1, 5, 10, 15]
-METHODS = ["spsir", "spsave", "splcor", "spcomb", "random"]
+METHODS = ["stsir", "stsave", "stlcor", "stcomb", "random"]
 MARKERS ={
-    "spsir": 'o',
-    "spsave": '^',
-    "splcor": 'v',
-    "spcomb": '*',
+    "stsir": 'o',
+    "stsave": '^',
+    "stlcor": 'v',
+    "stcomb": '*',
     "random": 'x'
 }
 
+def get_method_name(method):
+    if method == "stsir":
+        return "stSSA-SIR"
+    elif method == "stsave":
+        return "stSSA-SAVE"
+    elif method == "stlcor":
+        return "stSSA-LCOR"
+    elif method == "stcomb":
+        return "stSSA-COMB"
+    elif method == "random":
+        return "Random"
+    return method
 
 def plot_folder(folder, show=True, save=False):
     """
@@ -66,6 +61,10 @@ def plot_folder(folder, show=True, save=False):
     :param show: Boolean for whether to show the plots
     :param save: Boolean for whether to save the plots
     """
+    if not os.path.exists(folder):
+        print(f"Folder not found: {folder}")
+        return
+    
     for file in os.listdir(folder):  # for each setting
         filepath = os.path.join(folder, file)
         ssa_plot(filepath, show=show, save=save)
@@ -79,268 +78,101 @@ def ssa_plot(file, show=True, save=False):
     :param show: Boolean for whether to show the plots
     :param save: Boolean for whether to save the plots
     """
-    loc_arr = [50, 100, 200]
-    time_arr = [5, 10]
-    x_axis = [l * t for l in loc_arr for t in time_arr]
+    loc_arr = [100, 400, 900, 1600]
+    time_arr = [5, 10, 20]
+    sizes = [(l, t) for l in loc_arr for t in time_arr]
+    x_axis = [l * t for l, t in sizes]
 
     fig, axes = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=True,
                              figsize=(5.5, 3.5))  # we make three plots, one for each split
-    separated_data_ss = [{x: [] for x in METHODS} for _ in range(len(SPLITS))]
-    separated_data_ns = [{x: [] for x in METHODS} for _ in range(len(SPLITS))]
-    with open(file, 'rb') as f:
+    #separated_data_ss = [{x: [] for x in METHODS} for _ in range(len(SPLITS))]
+    #separated_data_ns = [{x: [] for x in METHODS} for _ in range(len(SPLITS))]
+    with open(file, "rb") as f:
         data = pickle.load(f)
-        for met, method_data in data.items():
-            for data_by_size in method_data.values():
-                for idx, data_by_split in enumerate(data_by_size.values()):
-                    separated_data_ss[idx][met].append(data_by_split[0])
-                    separated_data_ns[idx][met].append(data_by_split[1])
 
-    plot_data = [separated_data_ss, separated_data_ns]
-    # Store line objects only once (for legend)
-    method_lines = []
-    method_labels = []
-    print(file)
-    for row_idx, row in enumerate(axes):
-        for col_idx, ax in enumerate(row):
-            for method in METHODS:
-                data_to_plot = plot_data[row_idx][col_idx].get(method, None)
-                if data_to_plot is None or not data_to_plot:
+    legend_lines = []
+    legend_labels = []
+
+    for col_idx, split in enumerate(SPLITS):
+        ax_top = axes[0, col_idx]
+        ax_bottom = axes[1, col_idx]
+
+        for method in METHODS:
+            if method not in data:
+                continue
+
+            stationary_vals = []
+            nonstationary_vals = []
+
+            for size in sizes:
+                if size not in data[method]:
+                    stationary_vals.append(np.nan)
+                    nonstationary_vals.append(np.nan)
                     continue
-                if 'sp' in method:
-                    if 'lcor' in method:
-                        method_label = method[:2] + "SSA" + method[3:]
-                    else:
-                        method_label = method[:2] + "SSA" + method[2:]
-                else:
-                    method_label = method
-                line, = ax.plot(x_axis, data_to_plot, label=method_label,
-                                marker=MARKERS[method], linestyle='-')
-                # Only collect legend handles from the first subplot
-                if row_idx == 0 and col_idx == 0:
-                    method_lines.append(line)
-                    method_labels.append(method_label)
 
-                ax.set_ylim(-0.2, 3.0)
+                if split not in data[method][size]:
+                    stationary_vals.append(np.nan)
+                    nonstationary_vals.append(np.nan)
+                    continue
 
-                if row_idx == 0:
-                    ax.set_title(f"{SPLITS[col_idx]}")
-                if row_idx == 1 and col_idx == 0:
-                    ax.set_ylabel(r"$\mathbf{s}_{\mathrm{perf}}$")
-                if col_idx == 0 and row_idx == 0:
-                    ax.set_ylabel(r"$\mathbf{n}_{\mathrm{perf}}$")
-                if row_idx == 0 and col_idx == 2:
-                    ax.yaxis.set_label_position("right")
-                    ax.set_ylabel("Nonstationary", rotation=270, labelpad=15)
-                if row_idx == 1 and col_idx == 2:
-                    ax.yaxis.set_label_position("right")
-                    ax.set_ylabel("Stationary", rotation=270, labelpad=15)
-                if row_idx == 1 and col_idx == 1:
-                    ax.set_xlabel("Total observations (locations * times)")
+                res = data[method][size][split]
+                stationary_vals.append(res[0])
+                nonstationary_vals.append(res[1])
 
-    # Add a single legend to the entire figure
-    fig.legend(method_lines, method_labels, loc='lower center', ncol=len(METHODS), bbox_to_anchor=(0.5, -0.025))
-    plt.tight_layout(rect=[0.01, 0.01, 1, 0.95])  # Make room for the legend and title
+            label = get_method_name(method)
+
+            line_top, = ax_top.plot(
+                x_axis,
+                nonstationary_vals,
+                marker=MARKERS[method],
+                linestyle="-",
+                label=label,
+            )
+
+            ax_bottom.plot(
+                x_axis,
+                stationary_vals,
+                marker=MARKERS[method],
+                linestyle="-",
+                label=label,
+            )
+
+            if col_idx == 0:
+                legend_lines.append(line_top)
+                legend_labels.append(label)
+
+        ax_top.set_title(f"Split = {split}")
+        ax_top.set_ylabel(r"$n_{\mathrm{perf}}$")
+        ax_bottom.set_ylabel(r"$s_{\mathrm{perf}}$")
+        ax_bottom.set_xlabel("Total observations = locations × times")
+
+        ax_top.set_ylim(-0.1, 3.0)
+        ax_bottom.set_ylim(-0.1, 3.0)
+
+    fig.legend(
+        legend_lines,
+        legend_labels,
+        loc="lower center",
+        ncol=len(legend_labels),
+        bbox_to_anchor=(0.5, -0.03),
+    )
+
+    plt.tight_layout(rect=[0, 0.05, 1, 1])
 
     if save:
-        plt.savefig(f"plots/new/{file[-8:-4]}.pdf", dpi=800, format='pdf')
+        base = os.path.splitext(os.path.basename(file))[0]
+        save_dir = r"C:\Users\Käyttäjä\Desktop\Masters_degree_in_Mathematics_and_Statistics\Research\sp_ssa\plots"
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(os.path.join(save_dir, f"{base}.pdf"), format="pdf")
 
     if show:
         plt.show()
-
-
-def rank_plot(data, save=False, plot=True, save_file=None):
-    """
-    Creates bar plots for the rank simulations
-    :param data: Resulting data from the rank estimation simulations. Is assumed to be of the form
-        dict(rank: dict(method: np.array))
-    :param save: Boolean indicating whether to save the figure
-    :param plot: Boolean indicating whether to show the figure
-    :param save_file: A file name to save the figure. Only used if save=True
-    """
-    methods = METHODS[:-1]             # same as before
-    noise_dims = [1, 5, 10, 15]        # same as before
-
-    max_score = 8      # maximum dimension
-    center_score = 3   # correct dimension
-
-    score_levels = list(range(max_score + 1))  # 0..<=8
-
-    # Color scheme: neutral center, darker edges
-    center_color = np.array([0.85, 0.85, 0.85])  # neutral correct score
-
-    colors = []
-    for score in score_levels:
-
-        if score < center_score:  # undershoot -> blue
-            # normalize
-            d = (center_score - score) / center_score
-            # dark blue -> light gray
-            blue = np.array([0.2, 0.4, 1.0])  # dark-ish blue
-            color = blue * d + center_color * (1 - d)
-
-        elif score > center_score:  # overshoot -> red
-            d = (score - center_score) / (max_score - center_score)
-            red = np.array([1.0, 0.3, 0.3])  # red tones
-            color = red * d + center_color * (1 - d)
-
-        else:  # Correct estimate
-            color = center_color
-
-        colors.append(color)
-
-    colors = np.array(colors)
-
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # find the proportions for each bar that will be plotted
-    proportions = []
-    y_labels = []
-    real_row_indices = []
-    group_midpoints = {}
-    y_index = 0
-    group_gap = 1
-
-    for r in noise_dims:
-        group_start = y_index
-
-        for method in methods:
-            scores = data[r][method]
-            # Changes computation names to the ones actually used in the paper
-            if 'sp' in method:
-                if 'lcor' in method:
-                    method_label = method[:2] + "SSA" + method[3:]
-                else:
-                    method_label = method[:2] + "SSA" + method[2:]
-            else:
-                method_label = method
-
-            if len(scores) == 0:
-                continue
-            # distribution of scores (0–8)
-            counts = np.asarray(scores)  # scores is actually histogram counts
-            N = counts.sum()
-            prop = counts / N
-            proportions.append(prop)
-            y_labels.append(method_label)
-            real_row_indices.append(y_index)
-            y_index += 1
-
-        group_end = y_index
-        group_midpoints[r] = (group_start + group_end - 1) / 2
-
-        # spacer row
-        proportions.append([0.0] * len(score_levels))
-        y_labels.append("")
-        y_index += group_gap
-
-    # create the actual plots
-    left = np.zeros(len(proportions))
-    used_scores = set()
-
-    for i, score_val in enumerate(score_levels):
-        widths = np.array([p[score_val] for p in proportions])
-
-        # Check if this score actually appears and only use appeared values in the legend
-        if np.any(widths > 0):
-            used_scores.add(score_val)
-            label = str(score_val)
-        else:
-            label = None  # do NOT register legend entry
-
-        ax.barh(
-            np.arange(len(proportions)),
-            widths,
-            left=left,
-            color=colors[i],
-            label=label
-        )
-
-        left += widths
-
-    # Y-ticks for real rows only
-    ax.set_yticks(real_row_indices)
-    ax.set_yticklabels(
-        [y_labels[i] for i in real_row_indices],
-        rotation=25,
-        ha='right',
-        va='center',
-        fontsize=10
-    )
-
-    ax.set_xlabel("Proportion")
-
-    # add noise dim labels on the right
-    xlim = ax.get_xlim()
-    x_offset = xlim[1] * 1.005
-    for r, y in group_midpoints.items():
-        ax.text(
-            x_offset, y,
-            f"r={r}",
-            va='center',
-            ha='left',
-            fontsize=12,
-            rotation=-90
-        )
-
-    # Collect legend handles and labels
-    handles, labels = ax.get_legend_handles_labels()
-
-    # Convert labels to ints and filter used scores
-    labels_int = np.array([int(l) for l in labels])
-    sort_idx = np.argsort(labels_int)
-
-    handles = [handles[i] for i in sort_idx]
-    labels = [labels[i] for i in sort_idx]
-
-    ax.legend(
-        handles,
-        labels,
-        title=r"$\hat{q}$",
-        bbox_to_anchor=(1.10, 1),
-        fontsize=12,
-        loc='upper left'
-    )
-
-    plt.subplots_adjust(right=0.8)
-
-    if save:
-        if save_file is None:
-            plt.savefig("plots/plot.pdf", dpi=800, format='pdf')
-        else:
-            plt.savefig(save_file, dpi=800, format='pdf')
-
-    if plot:
-        plt.show()
-
-
-def generate_means(low=-3, high=3):
-    m = np.zeros((3, 3))
-
-    m[0, 0] = np.random.uniform(low, high)
-    leftover = -4 * m[0, 0]
-
-    m[1, 1] = np.random.uniform(-abs(leftover), abs(leftover))
-    leftover -= m[1, 1]
-
-    m[0, 1] = np.random.uniform(-abs(leftover), abs(leftover)) / 2
-    m[1, 0] = (leftover - 2 * m[0, 1]) / 2
-
-    leftover = -m[1, 1] - 2 * m[0, 1]
-    m[0, 2] = np.random.uniform(-abs(leftover), abs(leftover)) / 4
-    m[1, 2] = (leftover - 4 * m[0, 2]) / 2
-
-    leftover = -m[1, 1] - 2 * m[1, 2]
-    m[2, 2] = np.random.uniform(-abs(leftover), abs(leftover)) / 4
-    m[2, 1] = (leftover - 4 * m[2, 2]) / 2
-
-    m[2, 0] = -0.5 * (m[2, 1] + m[1, 0]) - 0.25 * m[1, 1]
-
-    return m
-
+    else:
+        plt.close()
 
 def compute_cell_stats(x, y, values, x_edges, y_edges, stat="mean"):
-    nx, ny = len(x_edges) - 1, len(y_edges) - 1
+    nx = len(x_edges) - 1
+    ny = len(y_edges) - 1
     out = np.full((nx, ny), np.nan)
 
     for i in range(nx):
@@ -356,143 +188,247 @@ def compute_cell_stats(x, y, values, x_edges, y_edges, stat="mean"):
 
 
 from matplotlib.patches import Rectangle
-def nonstationarity_example(seed=None, type_sel="m", nx=3, ny=3, plot=True, save=False, save_file=None):
+
+def spatio_temporal_nonstationarity_example(
+    seed=None,
+    type_sel="m",
+    num_locations=200,
+    num_times=6,
+    side_length=1,
+    time_length=6,
+    selected_time=0,
+    nx=3,
+    ny=3,
+    num_buckets=7,
+    plot=True,
+    save=False,
+    save_file=None,
+):
+    """
+    Draw a spatio-temporal illustration plot at one fixed time slice.
+
+    type_sel = "m"  -> mean nonstationarity
+    type_sel = "v"  -> variance nonstationarity
+
+    Background box color:
+        darker = larger box statistic
+        - mean if type_sel == "m"
+        - variance if type_sel == "v"
+
+    Point symbols:
+        grouped into observed-value ranges
+        each range gets its own marker and color
+    """
     if seed is not None:
         np.random.seed(seed)
 
-    points_per_unit = 50
-    num_units = 9
-    side_length = int(np.sqrt(points_per_unit * num_units))
+    # --------------------------------------------------
+    # 1. Generate spatio-temporal coordinates and one signal
+    # --------------------------------------------------
+    coords = generate_spatiotemporal_coordinates(
+        num_locations, num_times, side_length
+    )
 
-    coords = np.empty((points_per_unit * num_units, 2))
+    spatial_points = get_unique_spatial_locations(coords)
+    full_cov, _, _ = full_spatiotemporal_covariance(
+        spatial_points,
+        num_times,
+        nu=0.5,
+        phi=1.0,
+        theta=0.5,
+    )
 
-    # generate coordinates
-    for i in range(num_units):
-        box = generate_coordinates(points_per_unit, hi=side_length / 3)
-        offset = np.array([(i // 3) * side_length / 3,
-                           (i % 3) * side_length / 3])
-        coords[i * points_per_unit:(i + 1) * points_per_unit] = box + offset
+    values = generate_spatiotemporal_data(full_cov)
 
-    x, y = coords[:, 0], coords[:, 1]
+    # --------------------------------------------------
+    # 2. Define spatial block edges
+    # --------------------------------------------------
+    x_edges = np.linspace(0, side_length, nx + 1)
+    y_edges = np.linspace(0, side_length, ny + 1)
 
-    # generate values
-    cov = spatial_matern_covariance(coords)
-    values = generate_spatial_data(cov)
+    # --------------------------------------------------
+    # 3. Select one time slice for visualization
+    # --------------------------------------------------
+    mask_t = coords[:, 2] == selected_time
+    coords_t = coords[mask_t]
+    values_t = values[mask_t].copy()
 
+    x = coords_t[:, 0]
+    y = coords_t[:, 1]
+
+    # --------------------------------------------------
+    # 4. Induce blockwise nonstationarity
+    # --------------------------------------------------
     if type_sel == "m":
-        means = generate_means()
-        for i in range(num_units):
-            sl = slice(i * points_per_unit, (i + 1) * points_per_unit)
-            values[sl] -= values[sl].mean()
-            values[sl] += means[i // 3, i % 3]
+        # blockwise means
+        block_vals = np.linspace(-1.5, 1.5, nx * ny)
+        stat_type = "mean"
         label_stat = "mean"
 
     elif type_sel == "v":
-        var = np.array([
-            [0.25, 1.0, 0.25],
-            [1.0, 2.0, 1.0],
-            [0.25, 1.0, 0.25]
-        ])
-        for i in range(num_units):
-            sl = slice(i * points_per_unit, (i + 1) * points_per_unit)
-            values[sl] -= values[sl].mean()
-            values[sl] /= values[sl].std()
-            values[sl] *= np.sqrt(var[i // 3, i % 3])
+        # blockwise variances
+        block_vals = np.linspace(0.5, 2.0, nx * ny)
+        stat_type = "var"
         label_stat = "variance"
 
-    values = (values - values.mean()) / values.std()
+    else:
+        raise ValueError("type_sel must be 'm' or 'v'")
 
-    # bucket values
-    num_buckets = 7
-    bins = np.linspace(values.min(), values.max(), num_buckets + 1)
-    bucket_idx = np.digitize(values, bins) - 1
+    for j in range(ny):
+        for i in range(nx):
+            block_id = j * nx + i
 
-    markers = ['o', 's', '^', 'D', 'P', '*', 'x'][:num_buckets]
+            mask = (
+                (x >= x_edges[i]) & (x < x_edges[i + 1]) &
+                (y >= y_edges[j]) & (y < y_edges[j + 1])
+            )
 
-    # grid setup
-    x_edges = np.linspace(x.min(), x.max(), nx + 1)
-    y_edges = np.linspace(y.min(), y.max(), ny + 1)
+            if not np.any(mask):
+                continue
 
-    stat_type = "mean" if type_sel == "m" else "var"
-    cell_stats = compute_cell_stats(x, y, values, x_edges, y_edges, stat=stat_type)
+            # center inside each block first
+            values_t[mask] -= np.mean(values_t[mask])
 
-    vmin, vmax = values.min(), values.max()
+            if type_sel == "m":
+                values_t[mask] += block_vals[block_id]
 
-    def gray(val):
-        if not np.isfinite(val):
+            else:  # variance case
+                std = np.std(values_t[mask])
+                if std > 1e-10:
+                    values_t[mask] /= std
+                values_t[mask] *= np.sqrt(block_vals[block_id])
+
+    # --------------------------------------------------
+    # 5. Standardize globally for display
+    # --------------------------------------------------
+    global_std = np.std(values_t)
+    if global_std > 1e-10:
+        values_t = (values_t - np.mean(values_t)) / global_std
+    else:
+        values_t = values_t - np.mean(values_t)
+
+    # --------------------------------------------------
+    # 6. Compute box statistics for background shading
+    # --------------------------------------------------
+    cell_stats = compute_cell_stats(
+        x, y, values_t, x_edges, y_edges, stat=stat_type
+    )
+
+    stat_min = np.nanmin(cell_stats)
+    stat_max = np.nanmax(cell_stats)
+
+    def gray_from_stat(val):
+        if np.isnan(val):
             return 0.95
-        den = vmax - vmin
-        if den < 1e-12:
-            return 0.5
-        t = np.clip((val - vmin) / den, 0, 1)
-        return 0.95 - 0.85 * t
+        denom = stat_max - stat_min
+        if denom < 1e-12:
+            return 0.6
+        t = (val - stat_min) / denom
+        # larger statistic -> darker box
+        return 0.92 - 0.65 * t
 
-    # Create actual plots
-    fig, ax = plt.subplots(figsize=(7, 6))
+    # --------------------------------------------------
+    # 7. Bucket observed values into ranges
+    # --------------------------------------------------
+    bins = np.linspace(values_t.min(), values_t.max(), num_buckets + 1)
+    bucket_idx = np.digitize(values_t, bins) - 1
+    bucket_idx = np.clip(bucket_idx, 0, num_buckets - 1)
 
+    markers = ['o', 's', '^', 'D', 'P', '*', 'X'][:num_buckets]
+
+    # Use visible colors for the symbol groups
+    colors = sns.color_palette("coolwarm", num_buckets)
+
+    # --------------------------------------------------
+    # 8. Draw figure
+    # --------------------------------------------------
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
+
+    # background rectangles
     for i in range(nx):
         for j in range(ny):
-            ax.add_patch(Rectangle(
+            rect = Rectangle(
                 (x_edges[i], y_edges[j]),
                 x_edges[i + 1] - x_edges[i],
                 y_edges[j + 1] - y_edges[j],
-                facecolor=str(gray(cell_stats[i, j])),
-                edgecolor='black',
-                linewidth=0.5
-            ))
+                facecolor=str(gray_from_stat(cell_stats[i, j])),
+                edgecolor="black",
+                linewidth=0.6,
+            )
+            ax.add_patch(rect)
 
+    # scatter points by bucket
     for b, marker in enumerate(markers):
         mask = bucket_idx == b
         if not np.any(mask):
             continue
-        edgecolors = 'black' if marker not in ['x', '+', '|', '_'] else None
+
+        label = f"{bins[b]:.1f} – {bins[b + 1]:.1f}"
+
         ax.scatter(
-            x[mask], y[mask],
+            x[mask],
+            y[mask],
             marker=marker,
-            s=30,
-            edgecolors=edgecolors,
-            linewidths=0.5,
-            label=f'{bins[b]:.1f}–{bins[b + 1]:.1f}'
+            s=40,
+            color=colors[b],
+            edgecolors="black",
+            linewidths=0.4,
+            label=label,
         )
 
-    ax.legend(
-        loc='upper center',
-        bbox_to_anchor=(0.5, 0),
-        ncol=4,
-        frameon=True,
-        fontsize=12,
-        markerscale=2,
+    # --------------------------------------------------
+    # 9. Axes / legend / title
+    # --------------------------------------------------
+    ax.set_title(
+        f"Spatio-temporal example ({label_stat} nonstationarity), time={selected_time}"
     )
+    ax.set_xlim(0, side_length)
+    ax.set_ylim(0, side_length)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
 
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_xlim(x_edges[0], x_edges[-1])
-    ax.set_ylim(y_edges[0], y_edges[-1])
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.08),
+        ncol=3,
+        frameon=True,
+        fontsize=9,
+        title="Observed value range",
+    )
 
     plt.tight_layout()
 
+    # --------------------------------------------------
+    # 10. Save / show
+    # --------------------------------------------------
     if save:
+        save_dir = r"C:\Users\Käyttäjä\Desktop\Masters_degree_in_Mathematics_and_Statistics\Research\sp_ssa\plots"
+        os.makedirs(save_dir, exist_ok=True)
+
         if save_file is None:
-            plt.savefig(f"plots/partition_plot_{label_stat}_{nx}.pdf", dpi=800, format='pdf')
+            out_name = f"spatiotemporal_{label_stat}_t{selected_time}.pdf"
+            plt.savefig(os.path.join(save_dir, out_name), format="pdf")
         else:
-            plt.savefig(save_file, dpi=800, format='pdf')
+            plt.savefig(save_file, format="pdf")
 
     if plot:
         plt.show()
+    else:
+        plt.close()
 
 
 if __name__ == '__main__':
-    nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, save=True, plot=False)
-    nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, save=True, plot=False)
-    nonstationarity_example(seed=2343, type_sel="v", nx=2, ny=2, save=True, plot=False)
-    nonstationarity_example(seed=2343, type_sel="v", nx=3, ny=3, save=True, plot=False)
+    spatio_temporal_nonstationarity_example(seed=2343, type_sel="m", nx=2, ny=2, selected_time=0, save=True, plot=False)
+    spatio_temporal_nonstationarity_example(seed=2343, type_sel="m", nx=3, ny=3, selected_time=0, save=True, plot=False)
+    spatio_temporal_nonstationarity_example(seed=2343, type_sel="v", nx=2, ny=2, selected_time=0, save=True, plot=False)
+    spatio_temporal_nonstationarity_example(seed=2343, type_sel="v", nx=3, ny=3, selected_time=0, save=True, plot=False)
 
     subspace_folder = "data/subspace/results"
-    plot_folder(subspace_folder, show=False, save=True)
 
-    #rank_folder = 'data/rank/results'
-    #for file in os.listdir(rank_folder):
-        #print(file)
-        #with open(os.path.join(rank_folder, file), "rb") as f:
-            #data = pickle.load(f)
-            #rank_plot(data, save=True, plot=False, save_file=f"plots/{file[:-4]}.pdf")
+    if os.path.exists(subspace_folder):
+        plot_folder(subspace_folder, show=False, save=True)
+    else:
+        print(f"Folder not found: {subspace_folder}")
+        print("Run the subspace simulations first, or check where the .pkl result files were saved.")
+
+   

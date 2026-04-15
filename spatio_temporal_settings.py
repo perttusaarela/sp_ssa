@@ -23,136 +23,75 @@ def rotate_array(arr):
 
 
 # Helper function for each of the settings
-def get_partition_by_Type(coordinates, num_stripes, Type, side_length, time_length):
-    if Type == "space":
+def get_partition_by_Type(coordinates, num_stripes, setting_Type, side_length, time_length):
+    if setting_Type == "space":
         return partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, 1, side_length, time_length)
-    elif Type == "time":
+    elif setting_Type == "time":
         return partition_spatiotemporal_coordinates(coordinates, 1, 1, num_stripes, side_length, time_length)
-    elif Type == "space_time":
+    elif setting_Type == "space_time":
         return partition_spatiotemporal_coordinates(coordinates, num_stripes, num_stripes, num_stripes, side_length, time_length)
     else:
-        raise ValueError("Type must be 'space', 'time', or 'space_time'")
+        raise ValueError("setting_Type must be 'space', 'time', or 'space_time'")
     
 
-def get_partition_dims(num_stripes, Type):
-    if Type == "space":
+def get_partition_dims(num_stripes, setting_Type):
+    if setting_Type == "space":
         return num_stripes, num_stripes, 1
-    elif Type == "time":
+    elif setting_Type == "time":
         return 1, 1, num_stripes
-    elif Type == "space_time":
+    elif setting_Type == "space_time":
         return num_stripes, num_stripes, num_stripes
     else:
-        raise ValueError("Type must be 'space', 'time', or 'space_time'")
-
-
-def get_levels(start, end, n):
-    if n == 1:
-        return np.array([(start + end) / 2.0], dtype=float)
-    return np.linspace(start, end, n)    
+        raise ValueError("setting_Type must be 'space', 'time', or 'space_time'")
+  
 
 # Create block parameters directly from the partition structure
-def get_mean_block_params(partition, num_stripes, Type):
-    nx, ny, nt = get_partition_dims(num_stripes, Type)
-    n_spatial = nx * ny
+def get_mean_block_params(partition, num_stripes, setting_Type, seed=None):
+    """
+    The Mean parameters are in controlled range but the assignment is doing randomly across non-empty blocks
+    """
+    rng = np.random.default_rng(seed)
 
-    spatial_vals = get_levels(-1.5, 1.5, n_spatial)
-    time_vals = get_levels(-1.0, 1.0, nt)
-    time_offsets = get_levels(-0.5, 0.5, nt)
+    nonempty_count = sum(len(part[-1]) > 0 for part in partition)
+    if nonempty_count == 0:
+        return []
 
-    params = []
+    # controlled range, and then shuffle
+    values = np.linspace(-1.5, 1.5, nonempty_count)
+    rng.shuffle(values)
 
-    for block_id, part in enumerate(partition):
-        indices = part[-1]
-        if len(indices) == 0:
-            continue
-
-        ix = block_id % nx
-        iy = (block_id // nx) % ny
-        it = block_id // (nx * ny)
-        spatial_idx = iy * nx + ix
-
-        if Type == "space":
-            val = spatial_vals[spatial_idx]
-        elif Type == "time":
-            val = time_vals[it]
-        else:  # space_time
-            val = spatial_vals[spatial_idx] + time_offsets[it]
-
-        params.append(float(val))
-
-    return params
+    return [float(v) for v in values]
 
 
-def get_variance_block_params(partition, num_stripes, Type):
-    nx, ny, nt = get_partition_dims(num_stripes, Type)
-    n_spatial = nx * ny
+def get_variance_block_params(partition, num_stripes, setting_Type, seed=None):
+    """
+    The Variance parameters are in controlled range but the assignment is doing randomly across non-empty blocks
+    """
+    rng = np.random.default_rng(seed)
 
-    spatial_vals = get_levels(0.5, 1.5, n_spatial)
-    time_vals = get_levels(0.5, 1.5, nt)
-    time_offsets = get_levels(0.0, 0.5, nt)
+    nonempty_count = sum(len(part[-1]) > 0 for part in partition)
+    if nonempty_count == 0:
+        return []
 
-    params = []
+    values = np.linspace(0.5, 2.0, nonempty_count)
+    rng.shuffle(values)
 
-    for block_id, part in enumerate(partition):
-        indices = part[-1]
-        if len(indices) == 0:
-            continue
+    return [float(v) for v in values]
 
-        ix = block_id % nx
-        iy = (block_id // nx) % ny
-        it = block_id // (nx * ny)
-        spatial_idx = iy * nx + ix
+def get_corr_block_params(partition, num_stripes, setting_Type, seed=None):
+    """
+    Covariance parameters (nu, phi) are random but controlled and pair per non-empty block
+    """
+    rng = np.random.default_rng(seed)
 
-        if Type == "space":
-            val = spatial_vals[spatial_idx]
-        elif Type == "time":
-            val = time_vals[it]
-        else:  # space_time
-            val = spatial_vals[spatial_idx] + time_offsets[it]
+    nonempty_count = sum(len(part[-1]) > 0 for part in partition)
+    if nonempty_count == 0:
+        return []
 
-        params.append(float(val))
+    nu_vals = rng.uniform(0.5, 2.5, nonempty_count)
+    phi_vals = rng.uniform(0.7, 3.0, nonempty_count)
 
-    return params
-
-
-def get_corr_block_params(partition, num_stripes, Type):
-    nx, ny, nt = get_partition_dims(num_stripes, Type)
-    n_spatial = nx * ny
-
-    # If nu is small:roughness, large: smoothness
-    # If phi is small:short-range dependence, large:long-range dependence
-    spatial_nu = get_levels(0.5, 2.5, n_spatial)
-    spatial_phi = get_levels(0.7, 3.0, n_spatial)
-    time_nu = get_levels(0.5, 2.5, nt)
-    time_phi = get_levels(0.7, 3.0, nt)
-    time_nu_shift = get_levels(0.0, 0.3, nt) # time shifts for space_time
-    time_phi_shift = get_levels(0.0, 0.3, nt)
-
-    params = []
-
-    for block_id, part in enumerate(partition):
-        indices = part[-1]
-        if len(indices) == 0:
-            continue
-
-        ix = block_id % nx
-        iy = (block_id // nx) % ny
-        it = block_id // (nx * ny)
-        spatial_idx = iy * nx + ix
-
-        if Type == "space":
-            nu = spatial_nu[spatial_idx]
-            phi = spatial_phi[spatial_idx]
-        elif Type == "time":
-            nu = time_nu[it]
-            phi = time_phi[it]
-        else:  # space_time
-            nu = spatial_nu[spatial_idx] + time_nu_shift[it]
-            phi = spatial_phi[spatial_idx] + time_phi_shift[it]
-
-        params.append((float(nu), float(phi)))
-
-    return params
+    return [(float(nu), float(phi)) for nu, phi in zip(nu_vals, phi_vals)]
 
 
 # For the simplicity of each of the settings, used these helper functions
@@ -206,12 +145,12 @@ def build_subset_covariance(coords_subset, nu, phi, theta):
     return cm
 
 
-def simulate_covariance_nonstationary_signal(coordinates, num_points, num_stripes, Type, side_length, time_length, temporal_theta):
-    partition = get_partition_by_Type(coordinates, num_stripes, Type, side_length, time_length)
+def simulate_covariance_nonstationary_signal(coordinates, num_points, num_stripes, setting_Type, side_length, time_length, temporal_theta, seed=None):
+    partition = get_partition_by_Type(coordinates, num_stripes, setting_Type, side_length, time_length)
     segs = get_segments(partition)
     nonempty_segs = [seg for seg in segs if len(seg) > 0]
 
-    corr_params = get_corr_block_params(partition, num_stripes, Type)
+    corr_params = get_corr_block_params(partition, num_stripes, setting_Type, seed=seed)
 
     if len(corr_params) != len(nonempty_segs):
         raise ValueError(
@@ -239,7 +178,7 @@ def simulate_covariance_nonstationary_signal(coordinates, num_points, num_stripe
 
 
 # Setting 1: Non-stationarity in mean
-def spatio_temporal_setting_1(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, Type="space", debug=False,):
+def spatio_temporal_setting_1(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, setting_Type="space", debug=False,):
     coordinates, num_points, cholesky = get_stationary_background(num_locations, num_times, side_length, temporal_theta, seed=seed)
 
     num_signals = NUM_STATIONARY + NUM_NONSTATIONARY
@@ -247,11 +186,11 @@ def spatio_temporal_setting_1(num_locations, num_times, side_length=1, time_leng
     signals = (cholesky @ Z).T
 
     for signal_offset, num_stripes in enumerate(range(2, 4)):
-        partition = get_partition_by_Type(coordinates, num_stripes, Type, side_length, time_length)
+        partition = get_partition_by_Type(coordinates, num_stripes, setting_Type, side_length, time_length)
         segs = get_segments(partition)
         nonempty_segs = [seg for seg in segs if len(seg) > 0]
 
-        block_params = get_mean_block_params(partition, num_stripes, Type)
+        block_params = get_mean_block_params(partition, num_stripes, setting_Type)
 
         if len(block_params) != len(nonempty_segs):
             raise ValueError(
@@ -277,7 +216,7 @@ VARS = [
     [0.4, 0.8, 1.5, 1.2]
 ]
 # Setting 2: non-stationarity in variance
-def spatio_temporal_setting_2(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, Type="space", debug=False,):
+def spatio_temporal_setting_2(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, setting_Type="space", debug=False,):
     coordinates, num_points, cholesky = get_stationary_background(num_locations, num_times, side_length, temporal_theta, seed=seed)
 
     num_signals = NUM_STATIONARY + NUM_NONSTATIONARY
@@ -285,11 +224,11 @@ def spatio_temporal_setting_2(num_locations, num_times, side_length=1, time_leng
     signals = (cholesky @ Z).T
 
     for signal_offset, num_stripes in enumerate(range(2, 4)):
-        partition = get_partition_by_Type(coordinates, num_stripes, Type, side_length, time_length)
+        partition = get_partition_by_Type(coordinates, num_stripes, setting_Type, side_length, time_length)
         segs = get_segments(partition)
         nonempty_segs = [seg for seg in segs if len(seg) > 0]
 
-        block_params = get_variance_block_params(partition, num_stripes, Type)
+        block_params = get_variance_block_params(partition, num_stripes, setting_Type)
 
         if len(block_params) != len(nonempty_segs):
             raise ValueError(
@@ -319,7 +258,7 @@ CORRS = [
 
 
 # Setting 3: Non-stationarity in autocovariance
-def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, Type="space_time", debug=False,):
+def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, setting_Type="space_time", debug=False,):
     coordinates, num_points, cholesky = get_stationary_background(num_locations, num_times, side_length, temporal_theta, seed=seed)
 
     num_signals = NUM_STATIONARY + NUM_NONSTATIONARY
@@ -336,7 +275,7 @@ def spatio_temporal_setting_3(num_locations, num_times, side_length=1, time_leng
             coordinates=coordinates,
             num_points=num_points,
             num_stripes=num_stripes,
-            Type=Type,
+            setting_Type=setting_Type,
             side_length=side_length,
             time_length=time_length,
             temporal_theta=temporal_theta,
@@ -363,59 +302,70 @@ PARAMS = [
 ]
 
 # Setting 4: Combined mean + variance + covariance
-def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, Type="space_time", debug=False,):
+def spatio_temporal_setting_4(num_locations, num_times, side_length=1, time_length=1, seed=None, temporal_theta=0.5, setting_Type="space_time", debug=False,):
     """
     Combined setting contains:
     - 3 stationary signals
     - 1 mean-nonstationary signal from setting 1
     - 1 covariance-nonstationary signal from setting 3
     """
-    signals_mean, coordinates_mean = spatio_temporal_setting_1(
-        num_locations=num_locations,
-        num_times=num_times,
-        side_length=side_length,
-        time_length=time_length,
-        seed=seed,
-        temporal_theta=temporal_theta,
-        Type=Type,
-        debug=False,
+    coordinates, num_points, cholesky = get_stationary_background(
+        num_locations, num_times, side_length, temporal_theta, seed=seed
     )
 
-    signals_cov, coordinates_cov = spatio_temporal_setting_3(
-        num_locations=num_locations,
-        num_times=num_times,
+    num_signals = NUM_STATIONARY + NUM_NONSTATIONARY
+    signals = np.empty((num_signals, num_points), dtype=float)
+
+    Z = np.random.randn(num_points, NUM_STATIONARY + 1)
+    base_signals = (cholesky @ Z).T
+
+    signals[:NUM_STATIONARY] = base_signals[:NUM_STATIONARY]
+
+    # Nonstationary signal 1: mean nonstationary
+    mean_signal = base_signals[NUM_STATIONARY].copy()
+
+    mean_num_stripes = 2
+    mean_partition = get_partition_by_Type(
+        coordinates, mean_num_stripes, setting_Type, side_length, time_length
+    )
+    mean_segs = get_segments(mean_partition)
+    mean_nonempty_segs = [seg for seg in mean_segs if len(seg) > 0]
+
+    mean_params = get_mean_block_params(mean_partition, mean_num_stripes, setting_Type)
+
+    if len(mean_params) != len(mean_nonempty_segs):
+        raise ValueError(
+            f"Setting 4 mean: number of mean parameters ({len(mean_params)}) "
+            f"does not match number of non-empty segments ({len(mean_nonempty_segs)})"
+        )
+
+    mean_vector = params_to_block_vector(mean_params, mean_nonempty_segs)
+    mean_signal = mean_signal + mean_vector
+    signals[NUM_STATIONARY] = mean_signal
+
+    # Nonstationary signal 2: covariance nonstationary
+    corr_num_stripes = 3
+    cov_signal = simulate_covariance_nonstationary_signal(
+        coordinates=coordinates,
+        num_points=num_points,
+        num_stripes=corr_num_stripes,
+        setting_Type=setting_Type,
         side_length=side_length,
         time_length=time_length,
-        seed=seed,
         temporal_theta=temporal_theta,
-        Type=Type,
-        debug=False,
     )
+    signals[NUM_STATIONARY + 1] = cov_signal
 
-    # To make sure both coordinates really match
-    if not np.allclose(coordinates_mean, coordinates_cov):
-        raise ValueError("Setting 4: coordinates from setting 1 and setting 3 do not match.")
-
-    signals = np.vstack([
-        signals_mean[:NUM_STATIONARY, :],   # 3 stationary
-        signals_mean[NUM_STATIONARY, :],    # mean nonstationary signal
-        signals_cov[NUM_STATIONARY, :],     # covariance nonstationary signal
-    ])
-
-    # Final normalization
-    signals = signals - signals.mean(axis=1, keepdims=True)
-    std = signals.std(axis=1, keepdims=True)
-    std[std < 1e-10] = 1.0
-    signals = signals / std
+    signals = get_normalize_signals(signals)
 
     if debug:
         print("Means:", np.round(signals.mean(axis=1), 6))
         print("Vars:", np.round(signals.var(axis=1), 6))
 
-    return signals, coordinates_mean
+    return signals, coordinates
 
 if __name__ == "__main__":
-    sigs, coords = spatio_temporal_setting_3(num_locations=250, num_times=10, side_length=50, time_length=10, Type="space_time")
+    sigs, coords = spatio_temporal_setting_3(num_locations=250, num_times=10, side_length=50, time_length=10, setting_Type="space_time")
     print("global mean: ", sigs.mean(axis=1))
     print("global var: ", sigs.var(axis=1))
     for split in range(2, 4):
