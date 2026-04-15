@@ -172,11 +172,7 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
     return l_cov
 
 
-<<<<<<< HEAD
-def stssa_lcor(observations, coords, segments, kernel=("b", 2.3), lag=1):
-=======
 def stssa_lcor(observations, coords, segments, kernel=("b", 2.2), lag=1):
->>>>>>> 4c90c49 (fixed for getting plots and getting parameters more randomly)
     full_range = observations.shape[1]
     m_mat = np.zeros((observations.shape[0], observations.shape[0]))
 
@@ -192,11 +188,7 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.2), lag=1):
             lag=lag
         )
     else:
-<<<<<<< HEAD
-        raise ValueError("For the first version, use kernel ('b', 2.3)")
-=======
         raise ValueError("For the first version, use kernel ('b', 2.2)")
->>>>>>> 4c90c49 (fixed for getting plots and getting parameters more randomly)
 
     for segment in segments:
         if len(segment) == 0:
@@ -214,11 +206,7 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.2), lag=1):
     return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
-<<<<<<< HEAD
-def stssa_comb(observations, coords, segments, kernel=("b", 2.3), debug=False):
-=======
 def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
->>>>>>> 4c90c49 (fixed for getting plots and getting parameters more randomly)
     M1 = stssa_sir(observations, segments)
     M2 = stssa_save(observations, segments)
     M3 = stssa_lcor(observations, coords, segments, kernel=kernel)
@@ -226,45 +214,28 @@ def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
     objs = [M1, M2, M3]
     matrices = [M1.m_mat, M2.m_mat, M3.m_mat]
 
-    # Normalize each matrix by Frobenius norm
-    normed_matrices = []
-    for m in matrices:
-        nrm = np.linalg.norm(m, ord="fro")
-        if nrm < 1e-12:
-            normed_matrices.append(m.copy())
-        else:
-            normed_matrices.append(m / nrm)
     if debug:
-        print("norms of matrices before normalization")
+        print("norms of matrices")
         for m in matrices:
-            print(np.linalg.norm(m, ord="fro"))
+            print(np.linalg.norm(m))
 
-    X = np.concatenate(normed_matrices, axis=0)
+    X = np.concatenate(matrices, axis=0)
 
     result = STSSAResultsObject(m_mat=None, diagonalizer=None, diagonal=None)
     result.aux["stsir"] = objs[0]
     result.aux["stsave"] = objs[1]
     result.aux["stlcor"] = objs[2]
 
-<<<<<<< HEAD
-    V, D, it = joint_diagonalization(X, maxiter=3000, eps=1e-4)
+    V, D, it = joint_diagonalization(X, maxiter=1000, eps=1e-6)
 
-=======
-    try:
-        V, D, it = joint_diagonalization(X, maxiter=10000, eps=1e-3)
-    except AssertionError:
-        if debug:
-            print("Joint diagonalization failed, falling back to LCOR.")
-        return M3
-    
->>>>>>> 4c90c49 (fixed for getting plots and getting parameters more randomly)
     abs_D = np.abs(D)
     diagonal_of_sum_matrix = np.diagonal(sum(abs_D))
     perm = np.argsort(diagonal_of_sum_matrix)[::-1]
-    
-    result.diagonalizer = V[:, perm]
+    V = V[:, perm]
+
+    result.diagonalizer = V
     result.diagonal = diagonal_of_sum_matrix[perm]
-    result.m_mat = None
+    result.m_mat = V
 
     return result
 

@@ -1,5 +1,4 @@
 import pickle
-import os
 import numpy as np
 from spatio_temporal_settings import (spatio_temporal_setting_1, spatio_temporal_setting_2, spatio_temporal_setting_3,
                               spatio_temporal_setting_4, partition_spatiotemporal_coordinates)
@@ -8,7 +7,7 @@ from st_ssa import STSSA, compare_as_projectors
 from functools import partial
 from timeit import default_timer as timer
 from utils import generate_random_orthogonal_matrix, standardize_data
-#from rank_estimation import RankStats, all_ssa_procedures, multi_estimate_rank
+from rank_estimation import RankStats, all_ssa_procedures, multi_estimate_rank
 
 METHODS = ["stsir", "stsave", "stlcor", "stcomb", "random"]
 SPLITS  = [(2, 2, 2), (3, 3, 3), (4, 4, 4)]
@@ -25,10 +24,11 @@ def test_func(setup):
     num_tests = setup["num_tests"]
     #T = setup["T"]
     seed = setup["seed"]
+    #
     num_locations = setup["num_locations"]
     num_times = setup["num_times"]
     T = num_locations * num_times
-    side_length = setup["side_length"]
+    side_length = int(np.sqrt(num_locations))
 
     results = {
         method: {s: np.zeros((2, num_tests)) for s in splits}
@@ -36,9 +36,9 @@ def test_func(setup):
     }
     start = timer()
     func = setup["setting"]
-    setting_type = "space"
+    type = "space"
     for i in range(num_tests):
-        obs, coords = func(num_locations=num_locations, num_times=num_times, seed=seed, setting_Type=setting_type,
+        obs, coords = func(num_locations=num_locations, num_times=num_times, seed=seed, Type=type,
                            side_length=side_length, time_length=num_times)
         mixing_matrix = generate_random_orthogonal_matrix(p)  # rand. invertible p-by-p matrix
         unmixing_mat = mixing_matrix.T
@@ -50,11 +50,10 @@ def test_func(setup):
         for split in splits:
             partition = partition_spatiotemporal_coordinates(coords, split[0], split[1], split[2], side_length=side_length, time_length=num_times)
             segments = get_segments(partition)
-            segments = [seg for seg in segments if len(seg) > 0]
 
             ssa_obj = STSSA(data=mixed_signals, num_non_stationary=num_non_stationary)
 
-            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 2.2))
+            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("b", 2.3))
             ss_base = r_mat[:, :num_stationary].T @ ssa_obj.whitener  # baseline guess for ss
             ns_base = r_mat[:, num_stationary:].T @ ssa_obj.whitener  # baseline guess for ns
 
@@ -85,15 +84,8 @@ def test_func(setup):
 
     end = timer()
     print("time: ", end - start)
-    #if setup["file"] is not None:
-        #with open(setup["file"] + f"_{T}_{setup["idx"]}.pkl", "wb") as f:
-            #pickle.dump(results, f)
     if setup["file"] is not None:
-        save_dir = os.path.dirname(setup["file"])
-        os.makedirs(save_dir, exist_ok=True)
-
-        save_path = f"{setup['file']}_{num_locations}_{num_times}_{setup['idx']}.pkl"
-        with open(save_path, "wb") as f:
+        with open(setup["file"] + f"_{T}_{setup["idx"]}.pkl", "wb") as f:
             pickle.dump(results, f)
 
 
@@ -104,7 +96,7 @@ def subspace_simulation(setting: int):
     setup = {
         "num_stationary": 3,
         "num_non_stationary": 2,
-        "num_tests": 3,
+        "num_tests": 200,
         "num_locations": 250,
         "num_times": 10,
         "side_length": 50,        
@@ -132,12 +124,10 @@ def subspace_simulation(setting: int):
         exit()
 
     print("Starting full test for setting: ", setup["setting"])
-    #loc_arr = [100, 400, 900, 1600]
-    loc_arr = [100, 400]
-    #time_arr = [5, 10, 20]
-    time_arr = [5, 10]
+    loc_arr = [100, 400, 900, 1600]
+    time_arr = [5, 10, 20]
     sim_start = timer()
-    range_idx = 1
+    range_idx = 10
     for idx in range(range_idx):
         setup["idx"] = idx
         print("Starting tests for idx: ", idx)
@@ -152,7 +142,8 @@ def subspace_simulation(setting: int):
                     f"Starting {setup['num_tests']} tests "
                     f"for locations={num_locations}, times={num_times}"
                 )
-                test_func(setup)
+
+            test_func(setup)
         print("Finished tests for idx: ", idx)
         print("Time spent: ", timer() - idx_start)
 
@@ -191,16 +182,116 @@ def subspace_simulation(setting: int):
         }
         for m in METHODS
     }
-    os.makedirs("data/subspace/results", exist_ok=True)
+
     with open(f"data/subspace/results/setting{setting}.pkl", "wb") as f:
         pickle.dump(final_result, f)
+
+
+def rank_simulation():
+    """
+    Produces the data for simulation 2
+    """
+    side_length = 60
+    num_locations = 250
+    num_times = 10
+
+    num_tests = 1
+    test_params = [
+        {
+            "num_tests": num_tests,
+            "noise_dim": 1,
+            "file": "data/rank/r1",
+            "func": spatio_temporal_setting_4
+        },
+        {
+            "num_tests": num_tests,
+            "noise_dim": 5,
+            "file": "data/rank/r5",
+            "func": spatio_temporal_setting_4
+        },
+        {
+            "num_tests": num_tests,
+            "noise_dim": 10,
+            "file": "data/rank/r10",
+            "func": spatio_temporal_setting_4
+        },
+        {
+            "num_tests": num_tests,
+            "noise_dim": 15,
+            "file": "data/rank/r15",
+            "func": spatio_temporal_setting_4
+        }
+    ]
+    num_iter = 1
+    total_start_time = timer()
+
+    for params in test_params:
+        print("Starting test for params: ", params)
+        param_start_time = timer()
+        for idx in range(num_iter):
+            start = timer()
+            counts = RankStats()
+            noise_dim = params["noise_dim"]
+            print("idx: ", idx)
+            print("noise_dim: ", noise_dim)
+            for _ in range(params["num_tests"]):
+                data, coords = params["func"](num_locations=num_locations, num_times=num_times, side_length=side_length, time_length=num_times)
+
+                data = generate_random_orthogonal_matrix(5) @ data
+
+                data, _ = standardize_data(data)
+
+                func = partial(all_ssa_procedures, coords=coords, side_length=side_length, time_length=num_times, split=(4, 4, 4), kernel=('sb', 3.4))
+                try:
+                    res = multi_estimate_rank(data, func, noise_dim, 10, debug=False)
+                    counts.update(res)
+                except Exception as e:
+                    print("skipping one iteration", e)
+
+            print(counts)
+            counts.dump(params["file"] + "_" + str(idx) + ".pkl")
+            print("time: ", timer() - start)
+
+        print(f"Total time for params '{params["file"]}' : {timer() - param_start_time}")
+
+    print("All done!")
+    print("Total execution time: ", timer() - total_start_time)
+
+    print("Combining all sub-results to file: ", "data/rank/results/rank_sim4.pkl")
+    methods = METHODS[:-1]
+
+    data_dict = {
+        1: {
+            m: np.zeros(10, dtype=int) for m in methods
+        },
+        5: {
+            m: np.zeros(10, dtype=int) for m in methods
+        },
+        10: {
+            m: np.zeros(10, dtype=int) for m in methods
+        },
+        15: {
+            m: np.zeros(10, dtype=int) for m in methods
+        }
+    }
+    path = "data/rank"
+    for dim in data_dict.keys():
+        for idx in range(num_iter):
+            file = f"{path}/r{dim}_{idx}.pkl"
+            with open(file, "rb") as f:
+                data = pickle.load(f)
+                for m, data_arr in data.items():
+                    data_dict[dim][m] += data_arr
+
+    with open("data/rank/results/rank_sim4.pkl", "wb") as f:
+        pickle.dump(data_dict, f)
 
 
 import argparse
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run source separation simulations."
+        description="Run rank estimation or source separation simulations."
     )
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -210,7 +301,7 @@ def main():
         "--subspace",
         type=int,
         choices=[1, 2, 3, 4],
-        help="Run the source separation simulation for setting i in {1, 2, 3, 4}."
+        help="Run the source separation simulation for setting i ∈ {1, 2, 3, 4}."
     )
 
     args = parser.parse_args()
