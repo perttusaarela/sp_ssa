@@ -89,7 +89,7 @@ def stssa_sir(observations, segments):
         mean_mat = np.outer(mean_vec, mean_vec)
         m_mat += (len(segment) / full_range) * mean_mat
 
-    eigvals, eigvecs = np.linalg.eig(m_mat)
+    eigvals, eigvecs = np.linalg.eigh(m_mat)
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
@@ -108,7 +108,7 @@ def stssa_save(observations, segments):
         summand = cov_mat @ cov_mat
         m_mat += (len(segment) / full_range) * summand
 
-    eigvals, eigvecs = np.linalg.eig(m_mat)
+    eigvals, eigvecs = np.linalg.eigh(m_mat)
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
@@ -125,10 +125,10 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
         segment = np.arange(data.shape[1])
     segment = np.asarray(segment)
 
-    X = data[:, segment]
+    X = data[:, segment] # subset of data (NOT ordered grid anymore)
     C = coords[segment]
-    N = X.shape[1]
-    p = X.shape[0]
+    N = X.shape[1] # No. of observations in the subset
+    p = X.shape[0] # No. of signals
 
     """
     diffs = C[:, np.newaxis, :] - C[np.newaxis, :, :]
@@ -146,28 +146,51 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
 
     X_centered = X - seg_mean
 
-    C_loc = get_unique_spatial_locations(C)
-    num_locations = len(C_loc)
     l_cov = np.zeros((p, p))
-    for i, coord1 in enumerate(C_loc):
-        temp = np.zeros((p, p))
-        counter = 0
-        for j, coord2 in enumerate(C_loc):
-            if i == j:
+    counter = 0
+
+    for a in range(N):
+        for b in range(N):
+            if a == b:
                 continue
-            if np.linalg.norm(coord1[0:1] - coord2[0:1]) <= radius:
-                X_i = X_centered[:, i::num_locations]
-                X_j = X_centered[:, j::num_locations]
-                #temp += np.outer(X_centered[:, i], X_centered[:, j])
-                temp += X_i[:, :-lag] @ X_j[:, lag:].T
+
+            spatial_dist = np.linalg.norm(C[a, :2] - C[b, :2])
+            time_diff = C[b, 2] - C[a, 2]
+
+            if spatial_dist <= radius and time_diff == lag:
+                l_cov += np.outer(X_centered[:, a], X_centered[:, b])
                 counter += 1
 
-        if scale and counter > 0:
-            temp /= counter
+    if scale and counter > 0:
+        l_cov /= counter
+    elif N > 0:
+        l_cov /= N
 
-        l_cov += temp
+    
 
-    l_cov /= N
+    #C_loc = get_unique_spatial_locations(C)
+    #num_locations = len(C_loc)
+    #l_cov = np.zeros((p, p))
+    #for i, coord1 in enumerate(C_loc):
+    #    temp = np.zeros((p, p))
+     #   counter = 0
+      #  for j, coord2 in enumerate(C_loc):
+       #     if i == j:
+        #        continue
+            #if np.linalg.norm(coord1[0:1] - coord2[0:1]) <= radius:
+         #   if np.linalg.norm(coord1[:2] - coord2[:2]) <= radius:
+          #      X_i = X_centered[:, i::num_locations]
+           #     X_j = X_centered[:, j::num_locations]
+            #    #temp += np.outer(X_centered[:, i], X_centered[:, j])
+             #   temp += X_i[:, :-lag] @ X_j[:, lag:].T
+              #  counter += 1
+
+        #if scale and counter > 0:
+         #   temp /= counter
+
+        #l_cov += temp
+
+    #l_cov /= N
 
     return l_cov
 
@@ -195,10 +218,10 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.2), lag=1):
             continue
         cov_mat = func(segment=segment)
         diff = full_auto_cov - cov_mat
-        sq_diff = diff @ diff
+        sq_diff = diff @ diff.T
         m_mat += (len(segment) / full_range) * sq_diff
-
-    eigvals, eigvecs = np.linalg.eig(m_mat)
+        m_mat = 0.5 * (m_mat + m_mat.T)
+    eigvals, eigvecs = np.linalg.eigh(m_mat)
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
@@ -212,31 +235,60 @@ def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
     M3 = stssa_lcor(observations, coords, segments, kernel=kernel)
 
     objs = [M1, M2, M3]
-    matrices = [M1.m_mat, M2.m_mat, M3.m_mat]
+    matrices = [M1.m_mat.copy(), M2.m_mat.copy(), M3.m_mat.copy()]
 
     if debug:
-        print("norms of matrices")
-        for m in matrices:
-            print(np.linalg.norm(m))
+        print("Raw matrix norms:")
+        for i, m in enumerate(matrices, start=1):
+            print(f"M{i} norm = {np.linalg.norm(m):.6f}")
 
-    X = np.concatenate(matrices, axis=0)
+
+    # Normalize each matrix by Frobenius norm to reduce scale domination
+    scaled_matrices = []
+    for m in matrices:
+        norm = np.linalg.norm(m, ord="fro")
+        if norm > 1e-12:
+            scaled_matrices.append(m / norm)
+        else:
+            scaled_matrices.append(m.copy())
+
+    if debug:
+        print("Scaled matrix norms:")
+        for i, m in enumerate(scaled_matrices, start=1):
+            print(f"M{i} norm = {np.linalg.norm(m):.6f}")
+
+    X = np.concatenate(scaled_matrices, axis=0)
 
     result = STSSAResultsObject(m_mat=None, diagonalizer=None, diagonal=None)
     result.aux["stsir"] = objs[0]
     result.aux["stsave"] = objs[1]
     result.aux["stlcor"] = objs[2]
 
-    V, D, it = joint_diagonalization(X, maxiter=1000, eps=1e-6)
+    try:
+        V, D, it = joint_diagonalization(X, maxiter=5000, eps=1e-5)
 
-    abs_D = np.abs(D)
-    diagonal_of_sum_matrix = np.diagonal(sum(abs_D))
-    perm = np.argsort(diagonal_of_sum_matrix)[::-1]
-    V = V[:, perm]
+        abs_D = np.abs(D)
+        diagonal_of_sum_matrix = np.diagonal(np.sum(abs_D, axis=0))
+        perm = np.argsort(diagonal_of_sum_matrix)[::-1]
+        V = V[:, perm]
 
-    result.diagonalizer = V
-    result.diagonal = diagonal_of_sum_matrix[perm]
-    result.m_mat = V
+        result.diagonalizer = V
+        result.diagonal = diagonal_of_sum_matrix[perm]
+        result.m_mat = V
 
+    except AssertionError:
+        print("Warning: joint diagonalization did not converge in stcomb; using fallback eigen-decomposition.")
+
+        M_sum = scaled_matrices[0] + scaled_matrices[1] + scaled_matrices[2]
+        M_sum = 0.5 * (M_sum + M_sum.T)
+
+        perm = np.argsort(np.abs(eigvals))[::-1]
+        eigvecs = eigvecs[:, perm]
+        eigvals = eigvals[perm]
+
+        result.diagonalizer = eigvecs
+        result.diagonal = np.abs(eigvals)
+        result.m_mat = M_sum
     return result
 
 
