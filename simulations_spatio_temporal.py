@@ -37,7 +37,7 @@ def test_func(setup):
     }
     start = timer()
     func = setup["setting"]
-    setting_Type = "space"
+    setting_Type = setup["type"]
     for i in range(num_tests):
         obs, coords = func(num_locations=num_locations, num_times=num_times, seed=seed, setting_Type=setting_Type,
                            side_length=side_length, time_length=num_times)
@@ -86,7 +86,7 @@ def test_func(setup):
     end = timer()
     print("time: ", end - start)
     if setup["file"] is not None:
-        filename = setup["file"] + f"_{num_locations}_{num_times}_{setup['idx']}.pkl"
+        filename = setup["file"] + f"_{num_locations}_{num_times}_{setting_Type}_{setup['idx']}.pkl"
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:
             pickle.dump(results, f)
@@ -108,7 +108,8 @@ def subspace_simulation(setting: int):
         "seed": None,
         "setting": spatio_temporal_setting_1,
         "file": "data/final/setting4/data",
-        "idx": 0
+        "idx": 0,
+        "type": "space"
     }
     if setting == 1:
         setup["setting"] = spatio_temporal_setting_1
@@ -128,9 +129,10 @@ def subspace_simulation(setting: int):
 
     print("Starting full test for setting: ", setup["setting"])
     #loc_arr = [100, 400, 900, 1600]
-    loc_arr = [200]
+    loc_arr = [80, 160]
     #time_arr = [5, 10, 20]
-    time_arr = [10]
+    time_arr = [10, 50]
+    type_arr = ["space", "time", "space_time"]
     sim_start = timer()
     range_idx = 3
     for idx in range(range_idx):
@@ -138,17 +140,18 @@ def subspace_simulation(setting: int):
         print("Starting tests for idx: ", idx)
         idx_start = timer()
         for num_locations in loc_arr:
+            setup["num_locations"] = num_locations
             for num_times in time_arr:
-
-                setup["num_locations"] = num_locations
                 setup["num_times"] = num_times
+                for type_ in type_arr:
+                    setup["type"] = type_
 
-                print(
-                    f"Starting {setup['num_tests']} tests "
-                    f"for locations={num_locations}, times={num_times}"
-                )
+                    print(
+                        f"Starting {setup['num_tests']} tests "
+                        f"for locations={num_locations}, times={num_times}, type={type_}"
+                    )
 
-                test_func(setup)
+                    test_func(setup)
         print("Finished tests for idx: ", idx)
         print("Time spent: ", timer() - idx_start)
 
