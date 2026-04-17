@@ -100,9 +100,9 @@ def subspace_simulation(setting: int):
         "num_stationary": 3,
         "num_non_stationary": 2,
         "num_tests": 3,
-        "num_locations": 100,
-        "num_times": 5,
-        "side_length": 10,        
+        "num_locations": 400,
+        "num_times": 40,
+        "side_length": 20,
         "time_length": 5,
         "split" : None,
         "seed": None,
@@ -128,9 +128,9 @@ def subspace_simulation(setting: int):
 
     print("Starting full test for setting: ", setup["setting"])
     #loc_arr = [100, 400, 900, 1600]
-    loc_arr = [100]
+    loc_arr = [200]
     #time_arr = [5, 10, 20]
-    time_arr = [5]
+    time_arr = [10]
     sim_start = timer()
     range_idx = 3
     for idx in range(range_idx):

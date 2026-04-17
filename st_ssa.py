@@ -146,51 +146,28 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
 
     X_centered = X - seg_mean
 
+    C_loc = get_unique_spatial_locations(C)
+    num_locations = len(C_loc)
     l_cov = np.zeros((p, p))
-    counter = 0
-
-    for a in range(N):
-        for b in range(N):
-            if a == b:
+    for i, coord1 in enumerate(C_loc):
+        temp = np.zeros((p, p))
+        counter = 0
+        for j, coord2 in enumerate(C_loc):
+            if i == j:
                 continue
-
-            spatial_dist = np.linalg.norm(C[a, :2] - C[b, :2])
-            time_diff = C[b, 2] - C[a, 2]
-
-            if spatial_dist <= radius and time_diff == lag:
-                l_cov += np.outer(X_centered[:, a], X_centered[:, b])
+            if np.linalg.norm(coord1[:2] - coord2[:2]) <= radius:
+                X_i = X_centered[:, i::num_locations]
+                X_j = X_centered[:, j::num_locations]
+            #    #temp += np.outer(X_centered[:, i], X_centered[:, j])
+                temp += X_i[:, :-lag] @ X_j[:, lag:].T
                 counter += 1
 
-    if scale and counter > 0:
-        l_cov /= counter
-    elif N > 0:
-        l_cov /= N
+        if scale and counter > 0:
+            temp /= counter
 
-    
+        l_cov += temp
 
-    #C_loc = get_unique_spatial_locations(C)
-    #num_locations = len(C_loc)
-    #l_cov = np.zeros((p, p))
-    #for i, coord1 in enumerate(C_loc):
-    #    temp = np.zeros((p, p))
-     #   counter = 0
-      #  for j, coord2 in enumerate(C_loc):
-       #     if i == j:
-        #        continue
-            #if np.linalg.norm(coord1[0:1] - coord2[0:1]) <= radius:
-         #   if np.linalg.norm(coord1[:2] - coord2[:2]) <= radius:
-          #      X_i = X_centered[:, i::num_locations]
-           #     X_j = X_centered[:, j::num_locations]
-            #    #temp += np.outer(X_centered[:, i], X_centered[:, j])
-             #   temp += X_i[:, :-lag] @ X_j[:, lag:].T
-              #  counter += 1
-
-        #if scale and counter > 0:
-         #   temp /= counter
-
-        #l_cov += temp
-
-    #l_cov /= N
+    l_cov /= N
 
     return l_cov
 
@@ -242,53 +219,25 @@ def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
         for i, m in enumerate(matrices, start=1):
             print(f"M{i} norm = {np.linalg.norm(m):.6f}")
 
-
-    # Normalize each matrix by Frobenius norm to reduce scale domination
-    scaled_matrices = []
-    for m in matrices:
-        norm = np.linalg.norm(m, ord="fro")
-        if norm > 1e-12:
-            scaled_matrices.append(m / norm)
-        else:
-            scaled_matrices.append(m.copy())
-
-    if debug:
-        print("Scaled matrix norms:")
-        for i, m in enumerate(scaled_matrices, start=1):
-            print(f"M{i} norm = {np.linalg.norm(m):.6f}")
-
-    X = np.concatenate(scaled_matrices, axis=0)
+    X = np.concatenate(matrices, axis=0)
 
     result = STSSAResultsObject(m_mat=None, diagonalizer=None, diagonal=None)
     result.aux["stsir"] = objs[0]
     result.aux["stsave"] = objs[1]
     result.aux["stlcor"] = objs[2]
 
-    try:
-        V, D, it = joint_diagonalization(X, maxiter=5000, eps=1e-5)
 
-        abs_D = np.abs(D)
-        diagonal_of_sum_matrix = np.diagonal(np.sum(abs_D, axis=0))
-        perm = np.argsort(diagonal_of_sum_matrix)[::-1]
-        V = V[:, perm]
+    V, D, it = joint_diagonalization(X, maxiter=1000, eps=1e-5)
 
-        result.diagonalizer = V
-        result.diagonal = diagonal_of_sum_matrix[perm]
-        result.m_mat = V
+    abs_D = np.abs(D)
+    diagonal_of_sum_matrix = np.diagonal(np.sum(abs_D, axis=0))
+    perm = np.argsort(diagonal_of_sum_matrix)[::-1]
+    V = V[:, perm]
 
-    except AssertionError:
-        print("Warning: joint diagonalization did not converge in stcomb; using fallback eigen-decomposition.")
+    result.diagonalizer = V
+    result.diagonal = diagonal_of_sum_matrix[perm]
+    result.m_mat = V
 
-        M_sum = scaled_matrices[0] + scaled_matrices[1] + scaled_matrices[2]
-        M_sum = 0.5 * (M_sum + M_sum.T)
-
-        perm = np.argsort(np.abs(eigvals))[::-1]
-        eigvecs = eigvecs[:, perm]
-        eigvals = eigvals[perm]
-
-        result.diagonalizer = eigvecs
-        result.diagonal = np.abs(eigvals)
-        result.m_mat = M_sum
     return result
 
 

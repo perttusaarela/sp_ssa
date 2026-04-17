@@ -116,7 +116,7 @@ def get_stationary_background(num_locations, num_times, side_length, temporal_th
     num_points = num_locations * num_times
 
     spatial_points = get_unique_spatial_locations(coordinates)
-    cov_mat, spatial_cov, temporal_cov = full_spatiotemporal_covariance(spatial_points, num_times, nu=0.5, phi=10.0, theta=temporal_theta)
+    cov_mat, spatial_cov, temporal_cov = full_spatiotemporal_covariance(spatial_points, num_times, nu=0.5, phi=1.0, theta=temporal_theta)
     cov_mat += 1e-6 * np.eye(cov_mat.shape[0])
     cholesky = np.linalg.cholesky(cov_mat)
 
