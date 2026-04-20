@@ -222,9 +222,8 @@ def spatio_temporal_nonstationarity_example(
     if seed is not None:
         np.random.seed(seed)
 
-    # --------------------------------------------------
+
     # 1. Generate spatio-temporal coordinates and one signal
-    # --------------------------------------------------
     coords = generate_spatiotemporal_coordinates(
         num_locations, num_times, side_length
     )
