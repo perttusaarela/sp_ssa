@@ -1,5 +1,6 @@
 import pickle
 import numpy as np
+import os
 from spatio_temporal_settings import (spatio_temporal_setting_1, spatio_temporal_setting_2, spatio_temporal_setting_3,
                               spatio_temporal_setting_4, partition_spatiotemporal_coordinates)
 from spatio_temporal import get_segments
@@ -36,9 +37,9 @@ def test_func(setup):
     }
     start = timer()
     func = setup["setting"]
-    type = "space"
+    setting_Type = setup["type"]
     for i in range(num_tests):
-        obs, coords = func(num_locations=num_locations, num_times=num_times, seed=seed, Type=type,
+        obs, coords = func(num_locations=num_locations, num_times=num_times, seed=seed, setting_Type=setting_Type,
                            side_length=side_length, time_length=num_times)
         mixing_matrix = generate_random_orthogonal_matrix(p)  # rand. invertible p-by-p matrix
         unmixing_mat = mixing_matrix.T
@@ -85,7 +86,9 @@ def test_func(setup):
     end = timer()
     print("time: ", end - start)
     if setup["file"] is not None:
-        with open(setup["file"] + f"_{T}_{setup["idx"]}.pkl", "wb") as f:
+        filename = setup["file"] + f"_{num_locations}_{num_times}_{setting_Type}_{setup['idx']}.pkl"
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        with open(filename, "wb") as f:
             pickle.dump(results, f)
 
 
@@ -96,16 +99,17 @@ def subspace_simulation(setting: int):
     setup = {
         "num_stationary": 3,
         "num_non_stationary": 2,
-        "num_tests": 200,
-        "num_locations": 250,
-        "num_times": 10,
-        "side_length": 50,        
-        "time_length": 10,
+        "num_tests": 3,
+        "num_locations": 400,
+        "num_times": 40,
+        "side_length": 20,
+        "time_length": 5,
         "split" : None,
         "seed": None,
-        "setting": spatio_temporal_setting_4,
+        "setting": spatio_temporal_setting_1,
         "file": "data/final/setting4/data",
-        "idx": 0
+        "idx": 0,
+        "type": "space"
     }
     if setting == 1:
         setup["setting"] = spatio_temporal_setting_1
@@ -124,26 +128,30 @@ def subspace_simulation(setting: int):
         exit()
 
     print("Starting full test for setting: ", setup["setting"])
-    loc_arr = [100, 400, 900, 1600]
-    time_arr = [5, 10, 20]
+    #loc_arr = [100, 400, 900, 1600]
+    loc_arr = [80, 160]
+    #time_arr = [5, 10, 20]
+    time_arr = [10, 50]
+    type_arr = ["space", "time", "space_time"]
     sim_start = timer()
-    range_idx = 10
+    range_idx = 3
     for idx in range(range_idx):
         setup["idx"] = idx
         print("Starting tests for idx: ", idx)
         idx_start = timer()
         for num_locations in loc_arr:
+            setup["num_locations"] = num_locations
             for num_times in time_arr:
-
-                setup["num_locations"] = num_locations
                 setup["num_times"] = num_times
+                for type_ in type_arr:
+                    setup["type"] = type_
 
-                print(
-                    f"Starting {setup['num_tests']} tests "
-                    f"for locations={num_locations}, times={num_times}"
-                )
+                    print(
+                        f"Starting {setup['num_tests']} tests "
+                        f"for locations={num_locations}, times={num_times}, type={type_}"
+                    )
 
-            test_func(setup)
+                    test_func(setup)
         print("Finished tests for idx: ", idx)
         print("Time spent: ", timer() - idx_start)
 
@@ -187,104 +195,6 @@ def subspace_simulation(setting: int):
         pickle.dump(final_result, f)
 
 
-def rank_simulation():
-    """
-    Produces the data for simulation 2
-    """
-    side_length = 60
-    num_locations = 250
-    num_times = 10
-
-    num_tests = 1
-    test_params = [
-        {
-            "num_tests": num_tests,
-            "noise_dim": 1,
-            "file": "data/rank/r1",
-            "func": spatio_temporal_setting_4
-        },
-        {
-            "num_tests": num_tests,
-            "noise_dim": 5,
-            "file": "data/rank/r5",
-            "func": spatio_temporal_setting_4
-        },
-        {
-            "num_tests": num_tests,
-            "noise_dim": 10,
-            "file": "data/rank/r10",
-            "func": spatio_temporal_setting_4
-        },
-        {
-            "num_tests": num_tests,
-            "noise_dim": 15,
-            "file": "data/rank/r15",
-            "func": spatio_temporal_setting_4
-        }
-    ]
-    num_iter = 1
-    total_start_time = timer()
-
-    for params in test_params:
-        print("Starting test for params: ", params)
-        param_start_time = timer()
-        for idx in range(num_iter):
-            start = timer()
-            counts = RankStats()
-            noise_dim = params["noise_dim"]
-            print("idx: ", idx)
-            print("noise_dim: ", noise_dim)
-            for _ in range(params["num_tests"]):
-                data, coords = params["func"](num_locations=num_locations, num_times=num_times, side_length=side_length, time_length=num_times)
-
-                data = generate_random_orthogonal_matrix(5) @ data
-
-                data, _ = standardize_data(data)
-
-                func = partial(all_ssa_procedures, coords=coords, side_length=side_length, time_length=num_times, split=(4, 4, 4), kernel=('sb', 3.4))
-                try:
-                    res = multi_estimate_rank(data, func, noise_dim, 10, debug=False)
-                    counts.update(res)
-                except Exception as e:
-                    print("skipping one iteration", e)
-
-            print(counts)
-            counts.dump(params["file"] + "_" + str(idx) + ".pkl")
-            print("time: ", timer() - start)
-
-        print(f"Total time for params '{params["file"]}' : {timer() - param_start_time}")
-
-    print("All done!")
-    print("Total execution time: ", timer() - total_start_time)
-
-    print("Combining all sub-results to file: ", "data/rank/results/rank_sim4.pkl")
-    methods = METHODS[:-1]
-
-    data_dict = {
-        1: {
-            m: np.zeros(10, dtype=int) for m in methods
-        },
-        5: {
-            m: np.zeros(10, dtype=int) for m in methods
-        },
-        10: {
-            m: np.zeros(10, dtype=int) for m in methods
-        },
-        15: {
-            m: np.zeros(10, dtype=int) for m in methods
-        }
-    }
-    path = "data/rank"
-    for dim in data_dict.keys():
-        for idx in range(num_iter):
-            file = f"{path}/r{dim}_{idx}.pkl"
-            with open(file, "rb") as f:
-                data = pickle.load(f)
-                for m, data_arr in data.items():
-                    data_dict[dim][m] += data_arr
-
-    with open("data/rank/results/rank_sim4.pkl", "wb") as f:
-        pickle.dump(data_dict, f)
 
 
 import argparse

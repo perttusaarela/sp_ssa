@@ -89,7 +89,7 @@ def stssa_sir(observations, segments):
         mean_mat = np.outer(mean_vec, mean_vec)
         m_mat += (len(segment) / full_range) * mean_mat
 
-    eigvals, eigvecs = np.linalg.eig(m_mat)
+    eigvals, eigvecs = np.linalg.eigh(m_mat)
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
@@ -108,7 +108,7 @@ def stssa_save(observations, segments):
         summand = cov_mat @ cov_mat
         m_mat += (len(segment) / full_range) * summand
 
-    eigvals, eigvecs = np.linalg.eig(m_mat)
+    eigvals, eigvecs = np.linalg.eigh(m_mat)
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
@@ -125,10 +125,10 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
         segment = np.arange(data.shape[1])
     segment = np.asarray(segment)
 
-    X = data[:, segment]
+    X = data[:, segment] # subset of data (NOT ordered grid anymore)
     C = coords[segment]
-    N = X.shape[1]
-    p = X.shape[0]
+    N = X.shape[1] # No. of observations in the subset
+    p = X.shape[0] # No. of signals
 
     """
     diffs = C[:, np.newaxis, :] - C[np.newaxis, :, :]
@@ -155,10 +155,10 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
         for j, coord2 in enumerate(C_loc):
             if i == j:
                 continue
-            if np.linalg.norm(coord1[0:1] - coord2[0:1]) <= radius:
+            if np.linalg.norm(coord1[:2] - coord2[:2]) <= radius:
                 X_i = X_centered[:, i::num_locations]
                 X_j = X_centered[:, j::num_locations]
-                #temp += np.outer(X_centered[:, i], X_centered[:, j])
+            #    #temp += np.outer(X_centered[:, i], X_centered[:, j])
                 temp += X_i[:, :-lag] @ X_j[:, lag:].T
                 counter += 1
 
@@ -172,7 +172,7 @@ def st_ball_kernel_local_sample_covariance(data, coords, radius, lag, segment=No
     return l_cov
 
 
-def stssa_lcor(observations, coords, segments, kernel=("b", 2.3), lag=1):
+def stssa_lcor(observations, coords, segments, kernel=("b", 2.2), lag=1):
     full_range = observations.shape[1]
     m_mat = np.zeros((observations.shape[0], observations.shape[0]))
 
@@ -188,17 +188,17 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.3), lag=1):
             lag=lag
         )
     else:
-        raise ValueError("For the first version, use kernel ('b', 2.3)")
+        raise ValueError("For the first version, use kernel ('b', 2.2)")
 
     for segment in segments:
         if len(segment) == 0:
             continue
         cov_mat = func(segment=segment)
         diff = full_auto_cov - cov_mat
-        sq_diff = diff @ diff
+        sq_diff = diff @ diff.T
         m_mat += (len(segment) / full_range) * sq_diff
-
-    eigvals, eigvecs = np.linalg.eig(m_mat)
+        m_mat = 0.5 * (m_mat + m_mat.T)
+    eigvals, eigvecs = np.linalg.eigh(m_mat)
     perm = np.argsort(eigvals)[::-1]
     eigvecs = eigvecs[:, perm]
     eigvals = eigvals[perm]
@@ -206,18 +206,18 @@ def stssa_lcor(observations, coords, segments, kernel=("b", 2.3), lag=1):
     return STSSAResultsObject(m_mat=m_mat, diagonalizer=eigvecs, diagonal=eigvals)
 
 
-def stssa_comb(observations, coords, segments, kernel=("b", 2.3), debug=False):
+def stssa_comb(observations, coords, segments, kernel=("b", 2.2), debug=False):
     M1 = stssa_sir(observations, segments)
     M2 = stssa_save(observations, segments)
     M3 = stssa_lcor(observations, coords, segments, kernel=kernel)
 
     objs = [M1, M2, M3]
-    matrices = [M1.m_mat, M2.m_mat, M3.m_mat]
+    matrices = [M1.m_mat.copy(), M2.m_mat.copy(), M3.m_mat.copy()]
 
     if debug:
-        print("norms of matrices")
-        for m in matrices:
-            print(np.linalg.norm(m))
+        print("Raw matrix norms:")
+        for i, m in enumerate(matrices, start=1):
+            print(f"M{i} norm = {np.linalg.norm(m):.6f}")
 
     X = np.concatenate(matrices, axis=0)
 
@@ -226,10 +226,11 @@ def stssa_comb(observations, coords, segments, kernel=("b", 2.3), debug=False):
     result.aux["stsave"] = objs[1]
     result.aux["stlcor"] = objs[2]
 
-    V, D, it = joint_diagonalization(X, maxiter=3000, eps=1e-4)
+
+    V, D, it = joint_diagonalization(X, maxiter=1000, eps=1e-5)
 
     abs_D = np.abs(D)
-    diagonal_of_sum_matrix = np.diagonal(sum(abs_D))
+    diagonal_of_sum_matrix = np.diagonal(np.sum(abs_D, axis=0))
     perm = np.argsort(diagonal_of_sum_matrix)[::-1]
     V = V[:, perm]
 
