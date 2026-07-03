@@ -1,13 +1,31 @@
 import pickle
 import numpy as np
 from spatial_settings import (spatial_setting_1, spatial_setting_2, spatial_setting_3,
-                              spatial_setting_4, partition_coordinates)
-from spatial import get_segments
-from ssa import SSA, compare_as_projectors
+                              spatial_setting_4, spatial_setting_5)
+from pyssaBSS.spatial import partition_coordinates
+from pyssaBSS import SPSSA_COMB
+from pyssaBSS.kernels import ScaledBallKernel
 from functools import partial
 from timeit import default_timer as timer
-from utils import generate_random_orthogonal_matrix, standardize_data
-from rank_estimation import RankStats, all_ssa_procedures, multi_estimate_rank
+from pyssaBSS.utils import generate_random_orthogonal_matrix
+
+
+def to_projector(mat):
+    AtA = (mat.transpose() @ mat)
+    if np.linalg.matrix_rank(AtA) != mat.shape[0]:
+        inv = np.linalg.pinv(AtA)
+    else:
+        inv = np.linalg.inv(AtA)
+    return mat @ inv @ mat.transpose()
+
+
+def compare_as_projectors(mat1, mat2):
+    assert mat1.shape == mat2.shape
+    p1 = to_projector(mat1)
+    p2 = to_projector(mat2)
+    sub = p1 - p2
+    return 0.5 * np.linalg.norm(sub, ord='fro')**2
+
 
 METHODS = ["spsir", "spsave", "splcor", "spcomb", "random"]
 SPLITS  = [(2, 2), (3, 3), (4, 4)]
@@ -49,11 +67,9 @@ def test_func(setup):
 
         for split in splits:
             partition = partition_coordinates(coords, split[0], split[1], side_length=side_length)
-            segments = get_segments(partition)
 
-            ssa_obj = SSA(data=mixed_signals, num_non_stationary=num_non_stationary)
-
-            ss_mat, ns_mat = ssa_obj.comb(coords=coords, segments=segments, kernel=("sb", 3.4))
+            ssa_obj = SPSSA_COMB(data=mixed_signals, partition=partition, coords=coords, kernel=ScaledBallKernel(3.4))
+            ss_mat, ns_mat = ssa_obj.subspaces(q=num_non_stationary)
             ss_base = r_mat[:, :num_stationary].T @ ssa_obj.whitener  # baseline guess for ss
             ns_base = r_mat[:, num_stationary:].T @ ssa_obj.whitener  # baseline guess for ns
 
@@ -70,13 +86,14 @@ def test_func(setup):
                 results["spcomb"][split][1, i] = res
                 results["random"][split][1, i] = res_rand
 
-            if ssa_obj.aux is not None:
-                for method, obj in ssa_obj.aux.items():
-                    ss_mat, ns_mat = obj.get_subspaces(ssa_obj.whitener, num_non_stationary)
-                    res = np.array(compare_as_projectors(proj1.T, ss_mat.T))
-                    results[method][split][0, i] = res
-                    res = np.array(compare_as_projectors(proj2.T, ns_mat.T))
-                    results[method][split][1, i] = res
+            for method, obj in ssa_obj.individual_models_.items():
+                prefix = "spl" if method == "cor" else "sp"
+                method = prefix + method
+                ss_mat, ns_mat = obj.get_subspaces(ssa_obj.whitener, num_non_stationary)
+                res = np.array(compare_as_projectors(proj1.T, ss_mat.T))
+                results[method][split][0, i] = res
+                res = np.array(compare_as_projectors(proj2.T, ns_mat.T))
+                results[method][split][1, i] = res
 
     for method, arr in results.items():
         for s, data_arr in arr.items():
@@ -116,6 +133,9 @@ def subspace_simulation(setting: int):
     elif setting == 4:
         setup["setting"] = spatial_setting_4
         setup["file"] = "data/subspace/setting4/data"
+    elif setting == 5:
+        setup["setting"] = spatial_setting_5
+        setup["file"] = "data/subspace/setting5/data"
     else:
         print("invalid setting")
         exit()
@@ -173,6 +193,57 @@ def subspace_simulation(setting: int):
     with open(f"data/subspace/results/setting{setting}.pkl", "wb") as f:
         pickle.dump(final_result, f)
 
+methods = [
+        "spsir",
+        "spsave",
+        "splcor",
+        "spcomb",
+    ]
+class RankStats:
+    def __init__(self, rank_stat=None):
+        self.counts = {
+            m: np.zeros(10, dtype=int) for m in methods
+        }
+        if rank_stat is not None:
+            for method, rank in rank_stat.items():
+                self.counts[method][rank] += 1
+
+
+    def __add__(self, other):
+        for method in self.counts.keys():
+            self.counts[method] += other.counts[method]
+        return self
+
+    def update(self, rank_stat):
+        for method, rank in rank_stat.items():
+            self.counts[method][rank] += 1
+
+    def avg(self):
+        return {
+            m: (np.arange(len(c)) * c).sum() / c.sum() for m, c in self.counts.items()
+        }
+
+    def most_common(self):
+        return {
+            m: np.argmax(c) for m, c in self.counts.items()
+        }
+
+    def dump(self, filename):
+        with open(filename, 'wb') as f:
+            pickle.dump(self.counts, f)
+
+    def __repr__(self):
+        return "RankStats()"
+
+    def __str__(self):
+        ret = f""
+        for methods in self.counts.keys():
+            ret += f"{methods}: {self.counts[methods]}\n"
+
+        ret += f"avg: {self.avg()}\n"
+        ret += f"choice: {self.most_common()}\n"
+        return ret
+
 
 def rank_simulation():
     """
@@ -209,7 +280,6 @@ def rank_simulation():
     ]
     num_iter = 1
     total_start_time = timer()
-
     for params in test_params:
         print("Starting test for params: ", params)
         param_start_time = timer()
@@ -224,11 +294,19 @@ def rank_simulation():
 
                 data = generate_random_orthogonal_matrix(8) @ data
 
-                data, _ = standardize_data(data)
+                part = partition_coordinates(coords, 4, 4, sl)
 
-                func = partial(all_ssa_procedures, coords=coords, sl=sl, split=(4, 4), kernel=('sb', 3.4))
                 try:
-                    res = multi_estimate_rank(data, func, noise_dim, 10, debug=False)
+                    ssa = SPSSA_COMB(data=data, coords=coords, partition=part, kernel=ScaledBallKernel(3.4), s=10,
+                                     r=noise_dim)
+                    ssa.estimate_rank(individual=True)
+                    rank_res = ssa.rank_summary_
+                    res = {
+                        "spsir": rank_res.individual["sir"].rank,
+                        "spsave": rank_res.individual["save"].rank,
+                        "splcor": rank_res.individual["cor"].rank,
+                        "spcomb": rank_res.joint.rank
+                    }
                     counts.update(res)
                 except Exception as e:
                     print("skipping one iteration", e)
