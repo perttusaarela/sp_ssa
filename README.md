@@ -5,8 +5,10 @@ This repositry can be used to reproduce the simulations for the paper: STATIONAR
 ## Initialization
 
 Only the code for the simulations and plotting can be found here. The bulk of the work is implemented in the Python package pyssaBSS: https://pypi.org/project/pyssaBSS/
+
 To be able to run the code here, first run ```pip install pyssaBSS```.
-For Linux users, run ```./init.sh```, initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```.
+
+For Linux users, run ```./init.sh``` to initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```.
 
 ## Reproducing simulation results
 
