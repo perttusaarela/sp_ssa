@@ -2,11 +2,11 @@
 
 This repositry can be used to reproduce the simulations for the paper: STATIONARY SUBSPACE ANALYSIS FOR SPATIAL DATA
 
-Note that the C-code is taken from the CRAN R-package JADE under the GPL license. The original package can be found at: https://cran.r-project.org/package=JADE
-
 ## Initialization
 
-Note that the python code uses interfaced C-code which needs to be compiled separately. Before running any code, one should call ```make``` in the c_src directory. For Linux users, simply run ```./init.sh``` to make the C-files, initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```.
+Only the code for the simulations and plotting can be found here. The bulk of the work is implemented in the Python package pyssaBSS: https://pypi.org/project/pyssaBSS/
+To be able to run the code here, first run ```pip install pyssaBSS```.
+For Linux users, run ```./init.sh```, initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```.
 
 ## Reproducing simulation results
 
@@ -31,6 +31,7 @@ data/
     ├── setting2/
     ├── setting3/
     ├── setting4/
+    ├── setting5/
     └── results/
 ```
 
@@ -48,7 +49,7 @@ data/
 
 - **subspace/**  
   Contains data and outputs related to spSSA simulations (Simulation 1).
-  - **setting1–setting4/**: Different settings for parameters and types of nonstationarities.
+  - **setting1–setting5/**: Different settings for parameters and types of nonstationarities.
   - **results/**: Final results from spSSA simulations.
  
 ## Plotting the results
