@@ -98,22 +98,7 @@ def ladle_plots(k_vec, f_vec, phi_vec, g_vec, q_hat):
     plt.show()
 
 
-
-def scatter_test(data, coords, segments):
-    kernel=ScaledBallKernel(50000)
-    mean_scat = SIRScatter().compute(data=data, coords=coords, segments=segments)
-    var_scat = SAVEScatter().compute(data=data, coords=coords, segments=segments)
-    cor_scat = LCORScatter(kernel).compute(data=data, coords=coords, segments=segments)
-
-    res = np.asarray([np.linalg.norm(mean_scat),np.linalg.norm(var_scat),np.linalg.norm(cor_scat)])
-
-    return res
-
-
-
 def kola_pca_and_ica(values):
-    # pca_vals = values.copy()
-    # ica_vals = values.copy()
     pca = PCA(n_components=values.shape[0])
     ica = FastICA(n_components=values.shape[0])
 
@@ -131,109 +116,22 @@ def kola_pca_and_ica(values):
     return ret
 
 
-def local_vs_global(original, ssa, ica, pca, bss, coords, partition):
-    results = {
-        dat: np.zeros((35, 3)) for dat in ["Data", "spSSA", "ICA", "PCA", "SBSS"]
-    }
-    n = original.shape[1]
-    for i in range(35):
-        results["Data"][i] = scatter_test(original[i].reshape(1, n), coords, partition)
-        results["spSSA"][i] = scatter_test(ssa[i].reshape(1, n), coords, partition)
-        results["ICA"][i] = scatter_test(ica[i].reshape(1, n), coords, partition)
-        results["PCA"][i] = scatter_test(pca[i].reshape(1, n), coords, partition)
-        results["SBSS"][i] = scatter_test(bss[i].reshape(1, n), coords, partition)
-
-    return results
-
-import seaborn as sns
-
-sns.set_theme(style="whitegrid")
-
-stat_names = ["Mean", "Variance", "Spatial covariance"]
-
-def plot_heatmaps(method_data):
-    """
-    Parameters
-    ----------
-    method_data : dict[str, np.ndarray]
-        Dictionary mapping method -> (35,3) array.
-    """
-    plt.rcParams.update({
-        "font.size": 14,  # Base font size
-        "axes.titlesize": 16,
-        "axes.labelsize": 14,
-        "xtick.labelsize": 14,
-        "ytick.labelsize": 12,
-        "legend.fontsize": 12,
-        "figure.titlesize": 18,
-    })
-    stat_names = ["Mean", "Variance", "Spatial covariance"]
-    methods = list(method_data.keys())
-
-    # Common color scale
-    all_values = np.concatenate([arr.ravel() for arr in method_data.values()])
-    vmin = all_values.min()
-    vmax = all_values.max()
-
-    # Figure layout: 3 heatmaps + 1 narrow colorbar
-    fig = plt.figure(figsize=(14, 9))
-    gs = fig.add_gridspec(
-        1, 4,
-        width_ratios=[1, 1, 1, 0.06],
-        wspace=0.30
-    )
-
-    axes = [fig.add_subplot(gs[0, i]) for i in range(3)]
-    cax = fig.add_subplot(gs[0, 3])
-
-    for i, stat in enumerate(stat_names):
-
-        heat = np.column_stack([
-            method_data[m][:, i]
-            for m in methods
-        ])
-
-        sns.heatmap(
-            heat,
-            ax=axes[i],
-            cmap="viridis",
-            vmin=vmin,
-            vmax=vmax,
-            xticklabels=methods,
-            yticklabels=np.arange(1, heat.shape[0] + 1),
-            cbar=(i == 0),
-            cbar_ax=cax if i == 0 else None,
-            linewidths=0,
-        )
-
-        axes[i].set_title(stat, fontsize=16)
-
-        axes[i].set_xlabel("")
-
-        if i == 0:
-            axes[i].set_ylabel("")
-        else:
-            axes[i].set_ylabel("")
-            axes[i].set_yticklabels([])
-
-        # Keep method names horizontal
-        axes[i].tick_params(axis="x", rotation=0)
-        axes[i].tick_params(axis="y", labelsize=10)
-
-    cax.set_ylabel("Deviation", rotation=270, labelpad=20)
-    plt.savefig("plots/heatmaps.pdf", dpi=800)
-    plt.show()
-
 def bss(white_data, coords):
     kernel=BallKernel(50000)
     lcov = kernel.global_covariance(data=white_data, coords=coords)
     vals, vecs = np.linalg.eigh(lcov)
     return vecs
 
-
+from scipy.stats import kurtosis
 def kola_plot_bss(bss, pca, ica):
+    k = np.abs(kurtosis(ica, axis=1, fisher=True))
 
-    vals_list = [bss[-1], bss[-2], bss[-3], pca[0], pca[1], pca[2], ica[0], ica[1], ica[2]]
+    # Indices of components with largest |kurtosis|
+    ica_idxs = np.argsort(k)[::-1][:3]
+
+    vals_list = [bss[-1], bss[-2], bss[-3],
+                 pca[0], pca[1], pca[2],
+                 ica[ica_idxs[0]], ica[ica_idxs[1]], ica[ica_idxs[2]]]
     labels = [r"$\mathrm{SBSS}_1$", r"$\mathrm{SBSS}_2$", r"$\mathrm{SBSS}_3$",
               r"$\mathrm{PCA}_1$", r"$\mathrm{PCA}_2$", r"$\mathrm{PCA}_3$",
               r"$\mathrm{ICA}_1$", r"$\mathrm{ICA}_2$", r"$\mathrm{ICA}_3$"]
@@ -339,7 +237,7 @@ def analyse_kola_data(s=50, r=5):
     print("Nonstationary loadings: ")
     loadings_to_csv(ilr_V, ns, cols, file="data/kola/loadings/ns.csv")
     print("Stationary loadings: ")
-    loadings_to_csv(ilr_V, ss, cols, file="data/kola/loadings/ns.csv")
+    loadings_to_csv(ilr_V, ss, cols, file="data/kola/loadings/ss.csv")
 
     print("PCA loadings: ")
     loadings_to_csv(ilr_V, pca_ica_ret["pca_loadings"], cols, file="data/kola/loadings/pca.csv")
@@ -349,11 +247,7 @@ def analyse_kola_data(s=50, r=5):
     loadings_to_csv(ilr_V, bss_mat.T @ ssa_obj.whitener, cols, file="data/kola/loadings/sbss.csv")
 
 
-    #stats = local_vs_global(values, ssa_data, ret["pca_vals"].T, ret["ica_vals"].T, bss_vals, coords, partition[0])
-
-    #plot_heatmaps(stats)
-
-    # kola_plot_bss(bss_vals, ret["pca_vals"].T, ret["ica_vals"].T)
+    kola_plot_bss(bss_vals, pca_ica_ret["pca_vals"].T, pca_ica_ret["ica_vals"].T)
 
     res_dict = {
         "f_vec": rank_summary.cum_f_vec,
