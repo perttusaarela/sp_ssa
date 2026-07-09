@@ -8,7 +8,7 @@ Only the code for the simulations and plotting can be found here. The bulk of th
 
 To be able to run the code here, first run ```pip install pyssaBSS```.
 
-For Linux users, run ```./init.sh``` to initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```.
+For Linux users, run ```./init.sh``` to initialize data directories, and pull the Kola moss and map data. Otherwise, use ```get_kola_data.R```. The Kola data is publicly available at https://CRAN.R-project.org/package=StatDA
 
 ## Reproducing simulation results
 
